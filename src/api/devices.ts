@@ -1,0 +1,65 @@
+import apiClient from './client';
+import type {
+  Device,
+  CreateDeviceInput,
+  UpdateDeviceInput,
+  ListDevicesParams,
+  DeviceListResponse,
+  DeviceStats,
+  DeviceComment,
+} from '@/types';
+import type { AuditLog } from '@/types';
+
+export const devicesApi = {
+  list: async (params?: ListDevicesParams): Promise<DeviceListResponse> => {
+    const response = await apiClient.get<DeviceListResponse>('/devices', { params });
+    return response.data;
+  },
+
+  getById: async (id: string): Promise<Device> => {
+    const response = await apiClient.get<Device>(`/devices/${id}`);
+    return response.data;
+  },
+
+  create: async (data: CreateDeviceInput): Promise<Device> => {
+    const response = await apiClient.post<Device>('/devices', data);
+    return response.data;
+  },
+
+  update: async (id: string, data: UpdateDeviceInput): Promise<Device> => {
+    const response = await apiClient.put<Device>(`/devices/${id}`, data);
+    return response.data;
+  },
+
+  delete: async (id: string): Promise<void> => {
+    await apiClient.delete(`/devices/${id}`);
+  },
+
+  getStats: async (): Promise<DeviceStats> => {
+    const response = await apiClient.get<DeviceStats>('/devices/stats');
+    return response.data;
+  },
+
+  getAuditLogs: async (id: string, startDate?: string, endDate?: string): Promise<{ data: AuditLog[] }> => {
+    const params: Record<string, string> = {};
+    if (startDate) params.startDate = startDate;
+    if (endDate) params.endDate = endDate;
+    const response = await apiClient.get<{ data: AuditLog[] }>(`/devices/${id}/audit`, { params });
+    return response.data;
+  },
+
+  // Comments endpoints
+  getComments: async (id: string): Promise<{ data: DeviceComment[] }> => {
+    const response = await apiClient.get<{ data: DeviceComment[] }>(`/devices/${id}/comments`);
+    return response.data;
+  },
+
+  addComment: async (id: string, text: string): Promise<DeviceComment> => {
+    const response = await apiClient.post<DeviceComment>(`/devices/${id}/comments`, { text });
+    return response.data;
+  },
+
+  deleteComment: async (deviceId: string, commentId: string): Promise<void> => {
+    await apiClient.delete(`/devices/${deviceId}/comments/${commentId}`);
+  },
+};
