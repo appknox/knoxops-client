@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useNavigate, Navigate, Link } from 'react-router-dom';
+import { useNavigate, Navigate, Link, useSearchParams } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -19,6 +19,8 @@ const LoginPage = () => {
   const navigate = useNavigate();
   const { login, isAuthenticated, isLoading, error, clearError } = useAuthStore();
   const [showPassword, setShowPassword] = useState(false);
+  const [searchParams] = useSearchParams();
+  const oidcError = searchParams.get('error');
 
   const {
     register,
@@ -68,14 +70,18 @@ const LoginPage = () => {
               </div>
             )}
 
-            {/* Google OAuth Login Button */}
-            <button
-              type="button"
-              onClick={() => {
-                const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
-                window.location.href = `${apiUrl}/auth/google`;
-              }}
-              className="w-full flex items-center justify-center gap-3 px-4 py-2.5 border border-gray-300 rounded-lg text-gray-700 bg-white hover:bg-gray-50 transition-colors font-medium"
+            {oidcError && (
+              <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
+                {oidcError === 'oidc_unauthorized'
+                  ? 'No account found for this Google address. Contact your administrator.'
+                  : 'Google sign-in failed. Please try again or use email/password.'}
+              </div>
+            )}
+
+            {/* Google OIDC SSO Login Button */}
+            <a
+              href={`${import.meta.env.VITE_API_URL}/auth/oidc`}
+              className="flex items-center justify-center gap-3 w-full px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 transition-colors"
             >
               <svg className="w-5 h-5" viewBox="0 0 24 24">
                 <path
@@ -95,8 +101,8 @@ const LoginPage = () => {
                   d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
                 />
               </svg>
-              Continue with Google
-            </button>
+              Sign in with Google
+            </a>
 
             <div className="relative my-4">
               <div className="absolute inset-0 flex items-center">

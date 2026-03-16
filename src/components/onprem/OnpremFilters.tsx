@@ -1,22 +1,14 @@
-import { RotateCcw, Filter, Download } from 'lucide-react';
-import { Select, Button, SearchInput } from '@/components/ui';
+import { useState, useEffect } from 'react';
+import { RotateCcw } from 'lucide-react';
+import { Select, Button, SearchInput, MultiSelect } from '@/components/ui';
 import { useOnpremStore } from '@/stores';
-import type { ClientStatus, DeploymentStatus, EnvironmentType, MaintenancePlan } from '@/types';
+import { onpremApi } from '@/api';
+import type { ClientStatus, EnvironmentType } from '@/types';
 
 const clientStatusOptions = [
   { value: '', label: 'All Client Statuses' },
   { value: 'active', label: 'Active' },
   { value: 'inactive', label: 'Inactive' },
-];
-
-const deploymentStatusOptions = [
-  { value: '', label: 'All Health Statuses' },
-  { value: 'healthy', label: 'Healthy' },
-  { value: 'degraded', label: 'Degraded' },
-  { value: 'offline', label: 'Offline' },
-  { value: 'maintenance', label: 'Maintenance' },
-  { value: 'provisioning', label: 'Provisioning' },
-  { value: 'decommissioned', label: 'Decommissioned' },
 ];
 
 const environmentOptions = [
@@ -25,17 +17,44 @@ const environmentOptions = [
   { value: 'production', label: 'Production' },
 ];
 
-const maintenanceOptions = [
-  { value: '', label: 'All Maintenance Plans' },
-  { value: 'quarterly', label: 'Quarterly' },
-  { value: 'annually', label: 'Annually' },
-];
-
 const OnpremFilters = () => {
   const { filters, setFilters, clearFilters } = useOnpremStore();
+  const [versionOptions, setVersionOptions] = useState<{ value: string; label: string }[]>([]);
+  const [csmOptions, setCsmOptions] = useState<{ value: string; label: string }[]>([]);
+
+  useEffect(() => {
+    // Fetch distinct versions
+    onpremApi
+      .getDistinctVersions()
+      .then((versions) => {
+        setVersionOptions(versions.map((v) => ({ value: v, label: v })));
+      })
+      .catch((error) => {
+        console.error('Failed to fetch distinct versions:', error);
+      });
+
+    // Fetch distinct CSM users
+    onpremApi
+      .getDistinctCsmUsers()
+      .then((users) => {
+        setCsmOptions(
+          users.map((u) => ({
+            value: u.id,
+            label: `${u.firstName} ${u.lastName}`,
+          }))
+        );
+      })
+      .catch((error) => {
+        console.error('Failed to fetch distinct CSM users:', error);
+      });
+  }, []);
 
   const hasActiveFilters =
-    filters.search || filters.clientStatus || filters.status || filters.environmentType || filters.maintenancePlan;
+    filters.search ||
+    filters.clientStatus ||
+    filters.environmentType ||
+    filters.appknoxVersions.length > 0 ||
+    filters.csmIds.length > 0;
 
   return (
     <div className="bg-white rounded-xl border border-gray-200 p-4 mb-6">
@@ -64,19 +83,21 @@ const OnpremFilters = () => {
           />
         </div>
 
-        <div className="w-44">
-          <Select
-            options={deploymentStatusOptions}
-            value={filters.status}
-            onChange={(e) => setFilters({ status: e.target.value as DeploymentStatus | '' })}
+        <div className="w-52">
+          <MultiSelect
+            options={versionOptions}
+            selected={filters.appknoxVersions}
+            onChange={(vals) => setFilters({ appknoxVersions: vals })}
+            placeholder="All Versions"
           />
         </div>
 
-        <div className="w-44">
-          <Select
-            options={maintenanceOptions}
-            value={filters.maintenancePlan}
-            onChange={(e) => setFilters({ maintenancePlan: e.target.value as MaintenancePlan | '' })}
+        <div className="w-52">
+          <MultiSelect
+            options={csmOptions}
+            selected={filters.csmIds}
+            onChange={(vals) => setFilters({ csmIds: vals })}
+            placeholder="All CSMs"
           />
         </div>
 
@@ -86,17 +107,6 @@ const OnpremFilters = () => {
             Clear
           </Button>
         )}
-
-        <div className="flex gap-2 ml-auto">
-          <Button variant="outline" size="sm">
-            <Filter className="h-4 w-4 mr-1" />
-            Filter
-          </Button>
-          <Button variant="outline" size="sm">
-            <Download className="h-4 w-4 mr-1" />
-            Export
-          </Button>
-        </div>
       </div>
     </div>
   );

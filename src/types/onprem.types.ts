@@ -159,6 +159,9 @@ export interface ListOnpremParams {
   status?: DeploymentStatus;
   environmentType?: EnvironmentType;
   maintenancePlan?: MaintenancePlan;
+  currentVersion?: string;
+  currentVersions?: string[];
+  csmIds?: string[];
   environment?: string;
   region?: string;
   sortBy?: 'clientName' | 'name' | 'createdAt' | 'updatedAt' | 'lastPatchDate' | 'firstDeploymentDate' | 'clientStatus' | 'status' | 'customerName';

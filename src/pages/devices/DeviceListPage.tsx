@@ -11,10 +11,12 @@ import {
   DeviceAuditLogsModal,
 } from '@/components/devices';
 import { useDeviceStore } from '@/stores';
+import { usePermissions } from '@/hooks/usePermissions';
 import { devicesApi } from '@/api';
 import type { Device, DeviceListItem } from '@/types';
 
 const DeviceListPage = () => {
+  const { canManageDevices } = usePermissions();
   const { devices, pagination, stats, isLoading, fetchDevices, fetchStats, setPage } =
     useDeviceStore();
 
@@ -47,12 +49,14 @@ const DeviceListPage = () => {
             Monitor and manage hardware assets across all organizational units.
           </p>
         </div>
-        <Link to="/devices/register">
-          <Button className="shadow-md shadow-primary-500/20">
-            <Plus className="h-4 w-4 mr-2" />
-            Register New Device
-          </Button>
-        </Link>
+        {canManageDevices && (
+          <Link to="/devices/register">
+            <Button className="shadow-md shadow-primary-500/20">
+              <Plus className="h-4 w-4 mr-2" />
+              Register New Device
+            </Button>
+          </Link>
+        )}
       </div>
 
       {/* Filters */}

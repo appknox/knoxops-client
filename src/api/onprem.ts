@@ -30,6 +30,16 @@ export const onpremApi = {
     return response.data;
   },
 
+  getDistinctVersions: async (): Promise<string[]> => {
+    const response = await apiClient.get<{ data: string[] }>('/onprem/distinct-versions');
+    return response.data.data;
+  },
+
+  getDistinctCsmUsers: async (): Promise<{ id: string; firstName: string; lastName: string; email: string }[]> => {
+    const response = await apiClient.get<{ data: { id: string; firstName: string; lastName: string; email: string }[] }>('/onprem/distinct-csm-users');
+    return response.data.data;
+  },
+
   getById: async (id: string): Promise<OnpremDeployment> => {
     const response = await apiClient.get<OnpremDeployment>(`/onprem/${id}`);
     return response.data;

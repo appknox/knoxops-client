@@ -185,7 +185,25 @@ const IP_REGEX = /^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2
 
 const isValidDomainOrIP = (value: string): boolean => {
   if (!value.trim()) return true; // Empty is valid (optional field)
-  return DOMAIN_REGEX.test(value) || IP_REGEX.test(value);
+
+  // Remove protocol if present (http:// or https://)
+  let normalizedValue = value.trim().replace(/^https?:\/\//i, '');
+
+  // Remove trailing slash
+  normalizedValue = normalizedValue.replace(/\/$/, '');
+
+  // Check if it's a valid domain or IP
+  return DOMAIN_REGEX.test(normalizedValue) || IP_REGEX.test(normalizedValue);
+};
+
+const isValidIP = (value: string): boolean => {
+  if (!value.trim()) return true; // Empty is valid (optional field)
+  return IP_REGEX.test(value.trim());
+};
+
+const isValidDnsServers = (value: string): boolean => {
+  if (!value.trim()) return true; // Empty is valid (optional field)
+  return value.split(',').every((ip) => IP_REGEX.test(ip.trim()));
 };
 
 interface ValidationResult {
@@ -250,6 +268,26 @@ const validateForm = (data: FormData): ValidationResult => {
 
   if (data.licenseNumberOfApps && isNaN(parseInt(data.licenseNumberOfApps))) {
     errors.licenseNumberOfApps = 'Must be a valid number';
+  }
+
+  // Network Configuration validations
+  if (data.staticIP && !isValidIP(data.staticIP)) {
+    errors.staticIP = 'Please enter a valid IPv4 address (e.g. 192.168.1.100)';
+  }
+  if (data.gateway && !isValidIP(data.gateway)) {
+    errors.gateway = 'Please enter a valid IPv4 address (e.g. 192.168.1.1)';
+  }
+  if (data.netmask && !isValidIP(data.netmask)) {
+    errors.netmask = 'Please enter a valid IPv4 address (e.g. 255.255.255.0)';
+  }
+  if (data.dnsServers && !isValidDnsServers(data.dnsServers)) {
+    errors.dnsServers = 'Each DNS server must be a valid IPv4 address';
+  }
+  if (data.ntpServer && !isValidDomainOrIP(data.ntpServer)) {
+    errors.ntpServer = 'Please enter a valid IP address or hostname (e.g. pool.ntp.org)';
+  }
+  if (data.smtpServer && !isValidDomainOrIP(data.smtpServer)) {
+    errors.smtpServer = 'Please enter a valid IP address or hostname (e.g. smtp.example.com)';
   }
 
   return {
@@ -493,6 +531,39 @@ const RegisterOnpremPage = () => {
           nextScheduledPatchDate: 'Next Scheduled Patch Date must be after First Deployment Date',
         }));
       }
+    }
+  };
+
+  const handleNetworkFieldBlur = (field: keyof FormData) => {
+    const value = (formData[field] as string) || '';
+
+    // Clear existing error first
+    setFieldErrors((prev) => {
+      const updated = { ...prev };
+      delete updated[field];
+      return updated;
+    });
+
+    if (!value.trim()) return; // Empty = valid (optional fields)
+
+    let error: string | null = null;
+
+    if (field === 'staticIP' || field === 'gateway' || field === 'netmask') {
+      if (!isValidIP(value)) {
+        error = 'Please enter a valid IPv4 address';
+      }
+    } else if (field === 'dnsServers') {
+      if (!isValidDnsServers(value)) {
+        error = 'Each DNS server must be a valid IPv4 address';
+      }
+    } else if (field === 'ntpServer' || field === 'smtpServer') {
+      if (!isValidDomainOrIP(value)) {
+        error = 'Please enter a valid IP address or hostname';
+      }
+    }
+
+    if (error) {
+      setFieldErrors((prev) => ({ ...prev, [field]: error! }));
     }
   };
 
@@ -1519,6 +1590,8 @@ const RegisterOnpremPage = () => {
                     label="Static IP"
                     value={formData.staticIP}
                     onChange={(e) => handleChange('staticIP', e.target.value)}
+                    onBlur={() => handleNetworkFieldBlur('staticIP')}
+                    error={fieldErrors.staticIP}
                     placeholder="192.168.1.100"
                     tooltip="Static IP address assigned to the Appknox server"
                   />
@@ -1526,6 +1599,8 @@ const RegisterOnpremPage = () => {
                     label="Gateway"
                     value={formData.gateway}
                     onChange={(e) => handleChange('gateway', e.target.value)}
+                    onBlur={() => handleNetworkFieldBlur('gateway')}
+                    error={fieldErrors.gateway}
                     placeholder="192.168.1.1"
                     tooltip="Default gateway IP address for network routing"
                   />
@@ -1533,6 +1608,8 @@ const RegisterOnpremPage = () => {
                     label="Netmask"
                     value={formData.netmask}
                     onChange={(e) => handleChange('netmask', e.target.value)}
+                    onBlur={() => handleNetworkFieldBlur('netmask')}
+                    error={fieldErrors.netmask}
                     placeholder="255.255.255.0"
                     tooltip="Network mask defining the subnet (e.g., 255.255.255.0)"
                   />
@@ -1540,6 +1617,8 @@ const RegisterOnpremPage = () => {
                     label="DNS Servers (comma-separated)"
                     value={formData.dnsServers}
                     onChange={(e) => handleChange('dnsServers', e.target.value)}
+                    onBlur={() => handleNetworkFieldBlur('dnsServers')}
+                    error={fieldErrors.dnsServers}
                     placeholder="8.8.8.8, 8.8.4.4"
                     tooltip="DNS server addresses separated by commas for domain name resolution"
                   />
@@ -1547,6 +1626,8 @@ const RegisterOnpremPage = () => {
                     label="NTP Server"
                     value={formData.ntpServer}
                     onChange={(e) => handleChange('ntpServer', e.target.value)}
+                    onBlur={() => handleNetworkFieldBlur('ntpServer')}
+                    error={fieldErrors.ntpServer}
                     placeholder="pool.ntp.org"
                     tooltip="Network Time Protocol server for time synchronization"
                   />
@@ -1554,6 +1635,8 @@ const RegisterOnpremPage = () => {
                     label="SMTP Server"
                     value={formData.smtpServer}
                     onChange={(e) => handleChange('smtpServer', e.target.value)}
+                    onBlur={() => handleNetworkFieldBlur('smtpServer')}
+                    error={fieldErrors.smtpServer}
                     placeholder="smtp.example.com"
                     tooltip="SMTP server address for sending email notifications"
                   />

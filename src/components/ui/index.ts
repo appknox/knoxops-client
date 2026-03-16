@@ -11,3 +11,4 @@ export { SearchInput } from './SearchInput';
 export { Card, CardHeader, CardBody, CardFooter } from './Card';
 export { UserSearchCombobox } from './UserSearchCombobox';
 export { Tooltip } from './Tooltip';
+export { MultiSelect, type MultiSelectOption, type MultiSelectProps } from './MultiSelect';

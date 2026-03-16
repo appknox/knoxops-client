@@ -1,6 +1,7 @@
 import { History, Pencil, Trash2, Monitor, Smartphone, Tablet } from 'lucide-react';
 import { Avatar, Pagination } from '@/components/ui';
 import { DeviceStatusBadge } from './DeviceStatusBadge';
+import { usePermissions } from '@/hooks/usePermissions';
 import type { DeviceListItem } from '@/types';
 
 // Platform icon component
@@ -61,6 +62,8 @@ const DeviceTable = ({
   onViewHistory,
   isLoading,
 }: DeviceTableProps) => {
+  const { canManageDevices, canDeleteDevices } = usePermissions();
+
   if (isLoading) {
     return (
       <div className="bg-white rounded-xl border border-gray-200 p-8 text-center">
@@ -146,16 +149,26 @@ const DeviceTable = ({
                       <History className="h-4 w-4" />
                     </button>
                     <button
-                      onClick={() => onEdit(device)}
-                      className="p-1.5 text-orange-600 hover:bg-orange-50 rounded-lg transition-colors"
-                      title="Edit"
+                      onClick={canManageDevices ? () => onEdit(device) : undefined}
+                      disabled={!canManageDevices}
+                      className={`p-1.5 rounded-lg transition-colors ${
+                        canManageDevices
+                          ? 'text-orange-600 hover:bg-orange-50 cursor-pointer'
+                          : 'text-gray-300 cursor-not-allowed'
+                      }`}
+                      title={canManageDevices ? 'Edit' : 'You do not have permission to edit'}
                     >
                       <Pencil className="h-4 w-4" />
                     </button>
                     <button
-                      onClick={() => onDelete(device)}
-                      className="p-1.5 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                      title="Delete"
+                      onClick={canDeleteDevices ? () => onDelete(device) : undefined}
+                      disabled={!canDeleteDevices}
+                      className={`p-1.5 rounded-lg transition-colors ${
+                        canDeleteDevices
+                          ? 'text-red-600 hover:bg-red-50 cursor-pointer'
+                          : 'text-gray-300 cursor-not-allowed'
+                      }`}
+                      title={canDeleteDevices ? 'Delete' : 'You do not have permission to delete'}
                     >
                       <Trash2 className="h-4 w-4" />
                     </button>

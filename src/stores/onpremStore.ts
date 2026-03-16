@@ -6,9 +6,7 @@ import type {
   UpdateOnpremInput,
   ListOnpremParams,
   ClientStatus,
-  DeploymentStatus,
   EnvironmentType,
-  MaintenancePlan,
   OnpremDeviceAssociation,
   OnpremVersionHistory,
   AddDeviceInput,
@@ -23,9 +21,9 @@ import type {
 interface OnpremFilters {
   search: string;
   clientStatus: ClientStatus | '';
-  status: DeploymentStatus | '';
   environmentType: EnvironmentType | '';
-  maintenancePlan: MaintenancePlan | '';
+  appknoxVersions: string[];
+  csmIds: string[];
 }
 
 interface OnpremState {
@@ -104,9 +102,9 @@ interface OnpremState {
 const initialFilters: OnpremFilters = {
   search: '',
   clientStatus: '',
-  status: '',
   environmentType: '',
-  maintenancePlan: '',
+  appknoxVersions: [],
+  csmIds: [],
 };
 
 export const useOnpremStore = create<OnpremState>((set, get) => ({
@@ -119,7 +117,7 @@ export const useOnpremStore = create<OnpremState>((set, get) => ({
     totalPages: 0,
   },
   filters: initialFilters,
-  sortBy: 'lastPatchDate',
+  sortBy: 'createdAt',
   sortOrder: 'desc',
   isLoading: false,
   error: null,
@@ -162,9 +160,9 @@ export const useOnpremStore = create<OnpremState>((set, get) => ({
 
       if (filters.search) params.search = filters.search;
       if (filters.clientStatus) params.clientStatus = filters.clientStatus;
-      if (filters.status) params.status = filters.status;
       if (filters.environmentType) params.environmentType = filters.environmentType;
-      if (filters.maintenancePlan) params.maintenancePlan = filters.maintenancePlan;
+      if (filters.appknoxVersions.length > 0) params.currentVersions = filters.appknoxVersions;
+      if (filters.csmIds.length > 0) params.csmIds = filters.csmIds;
 
       const response = await onpremApi.list(params);
       set({
