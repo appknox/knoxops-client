@@ -13,10 +13,10 @@ import type { UserListItem } from '@/types';
 
 const UserListPage = () => {
   const navigate = useNavigate();
-  const { users, pagination, stats, isLoading, fetchUsers, fetchStats, setPage } =
+  const { users, pagination, stats, isLoading, fetchUsers, fetchStats, setPage, resendInvite } =
     useUserStore();
 
-  const [deactivateUser, setDeactivateUser] = useState<UserListItem | null>(null);
+  const [deleteUser, setDeleteUser] = useState<UserListItem | null>(null);
 
   useEffect(() => {
     fetchUsers();
@@ -25,6 +25,17 @@ const UserListPage = () => {
 
   const handleEdit = (user: UserListItem) => {
     navigate(`/users/${user.id}/edit`);
+  };
+
+  const handleResendInvite = async (user: UserListItem) => {
+    try {
+      await resendInvite(user.id);
+      // Show success message - you can add a toast notification here
+      await fetchUsers();
+    } catch (error) {
+      // Error handling - you can add a toast notification here
+      console.error('Failed to resend invite:', error);
+    }
   };
 
   return (
@@ -57,15 +68,16 @@ const UserListPage = () => {
         pagination={pagination}
         onPageChange={setPage}
         onEdit={handleEdit}
-        onDeactivate={setDeactivateUser}
+        onDelete={setDeleteUser}
+        onResendInvite={handleResendInvite}
         isLoading={isLoading}
       />
 
-      {/* Deactivate Dialog */}
+      {/* Delete Dialog */}
       <DeactivateUserDialog
-        isOpen={!!deactivateUser}
-        onClose={() => setDeactivateUser(null)}
-        user={deactivateUser}
+        isOpen={!!deleteUser}
+        onClose={() => setDeleteUser(null)}
+        user={deleteUser}
       />
     </div>
   );

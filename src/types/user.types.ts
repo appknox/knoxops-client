@@ -4,6 +4,8 @@ export type PermissionLevel = 'none' | 'read' | 'read_write';
 
 export type InviteStatus = 'pending' | 'accepted' | 'expired' | 'revoked';
 
+export type UserStatus = 'pending' | 'active' | 'expired' | 'deleted';
+
 // User item for list display
 export interface UserListItem {
   id: string;
@@ -11,8 +13,7 @@ export interface UserListItem {
   firstName: string;
   lastName: string;
   role: Role;
-  isActive: boolean;
-  inviteStatus: InviteStatus | null;
+  status: UserStatus;
   lastLoginAt: string | null;
   createdAt: string;
 }
@@ -34,7 +35,7 @@ export interface ListUsersParams {
   limit?: number;
   search?: string;
   role?: Role;
-  isActive?: boolean;
+  status?: UserStatus;
   sortBy?: 'email' | 'firstName' | 'lastName' | 'createdAt' | 'lastLoginAt';
   sortOrder?: 'asc' | 'desc';
 }
@@ -44,7 +45,6 @@ export interface UpdateUserInput {
   firstName?: string;
   lastName?: string;
   role?: Role;
-  isActive?: boolean;
 }
 
 // User stats for summary cards
@@ -62,7 +62,7 @@ export interface Invite {
   firstName: string;
   lastName: string;
   role: Role;
-  status: InviteStatus;
+  status: UserStatus;
   expiresAt: string;
   createdAt: string;
   invitedBy: string | null;

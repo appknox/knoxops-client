@@ -1,26 +1,19 @@
 import { Badge } from '@/components/ui';
-import type { InviteStatus } from '@/types';
+import type { UserStatus } from '@/types';
 
 interface UserStatusBadgeProps {
-  isActive: boolean;
-  inviteStatus?: InviteStatus | null;
+  status: UserStatus;
 }
 
-const UserStatusBadge = ({ isActive, inviteStatus }: UserStatusBadgeProps) => {
-  // Check if user is pending invite
-  if (inviteStatus === 'pending') {
-    return (
-      <Badge variant="warning">
-        Invitation Pending
-      </Badge>
-    );
-  }
+const UserStatusBadge = ({ status }: UserStatusBadgeProps) => {
+  const config = {
+    active:  { variant: 'success', label: 'Active' },
+    pending: { variant: 'warning', label: 'Invite Pending' },
+    expired: { variant: 'error',   label: 'Invite Expired' },
+    deleted: { variant: 'default', label: 'Deleted' },
+  }[status];
 
-  return (
-    <Badge variant={isActive ? 'success' : 'default'}>
-      {isActive ? 'Active' : 'Inactive'}
-    </Badge>
-  );
+  return <Badge variant={config.variant}>{config.label}</Badge>;
 };
 
 export { UserStatusBadge };

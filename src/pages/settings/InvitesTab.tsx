@@ -49,12 +49,12 @@ const InvitesTab = () => {
     switch (status) {
       case 'pending':
         return <span className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium rounded-full bg-yellow-50 text-yellow-700"><Clock className="h-3 w-3" /> Pending</span>;
-      case 'accepted':
-        return <span className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium rounded-full bg-green-50 text-green-700"><CheckCircle className="h-3 w-3" /> Accepted</span>;
+      case 'active':
+        return <span className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium rounded-full bg-green-50 text-green-700"><CheckCircle className="h-3 w-3" /> Active</span>;
       case 'expired':
-        return <span className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium rounded-full bg-gray-50 text-gray-700"><XCircle className="h-3 w-3" /> Expired</span>;
-      case 'revoked':
-        return <span className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium rounded-full bg-red-50 text-red-700"><XCircle className="h-3 w-3" /> Revoked</span>;
+        return <span className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium rounded-full bg-red-50 text-red-700"><XCircle className="h-3 w-3" /> Expired</span>;
+      case 'deleted':
+        return <span className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium rounded-full bg-gray-50 text-gray-700"><XCircle className="h-3 w-3" /> Deleted</span>;
       default:
         return status;
     }
@@ -99,7 +99,7 @@ const InvitesTab = () => {
                   </td>
                   <td className="px-6 py-3 text-sm">
                     <div className="flex gap-2">
-                      {invite.status === 'expired' && (
+                      {(invite.status === 'expired' || invite.status === 'deleted') && (
                         <button
                           onClick={() => handleResend(invite.id)}
                           className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
@@ -112,7 +112,7 @@ const InvitesTab = () => {
                         onClick={() => handleRevoke(invite.id)}
                         className="p-1.5 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
                         title="Delete invite"
-                        disabled={invite.status === 'accepted'}
+                        disabled={invite.status === 'active' || invite.status === 'deleted'}
                       >
                         <Trash2 className="h-4 w-4" />
                       </button>

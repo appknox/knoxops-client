@@ -3040,3 +3040,667 @@ All major features of the Settings Page and SSO-based User Invitations plan have
 - Password login toggle (Part 4 of plan) scaffolded but not fully implemented for this iteration
 - SSO-based invite acceptance is fully operational and tested with Google OAuth
 - All route changes are backward compatible (old `/users` route now under `/settings/users`)
+
+---
+
+---
+
+# Implementation Plan: Unified User Status Model
+
+**STATUS:** ✅ COMPLETED (2026-03-16)
+
+**Location:** Backend — `knoxadmin` + Frontend — `knoxadmin-client`
+
+## Overview
+
+Simplify user state into a **single `status` field** replacing the current dual-flag system (`isActive: boolean` + `inviteStatus: enum`). The new model:
+
+| Status | Meaning |
+|--------|---------|
+| `pending` | Invited, not yet accepted |
+| `active` | Accepted and active |
+| `expired` | Invite not accepted within `INVITE_EXPIRY_DAYS` days (default: 5) |
+| `deleted` | Soft-deleted by admin |
+
+**Key simplifications:**
+- Drop `isActive` column — `status='active'` replaces `isActive=true`
+- Drop `inviteStatus` column — merged into `status`
+- Drop the `userInvites` table — invite token already lives on `users` (`inviteToken`, `inviteExpiresAt`, `invitedBy`); second table is redundant
+- `listUsers()` becomes a single table query (no more in-memory union of two tables)
+- Delete button works for **all** statuses (pending, active, expired) — soft delete sets `status='deleted'`
+
+---
+
+## Files to Modify
+
+### Backend
+| File | Change |
+|------|--------|
+| `src/db/schema/users.ts` | Add `userStatusEnum` + `status` column; remove `isActive`, `inviteStatus`; remove `inviteStatusEnum`; remove `userInvites` table |
+| `drizzle/` | New migration file |
+| `src/config/env.ts` | Add `INVITE_EXPIRY_DAYS` (default: 5) |
+| `src/modules/invites/invites.service.ts` | `createInvite()` inserts into `users` directly; `acceptInvite()` updates user row; drop `userInvites` queries |
+| `src/modules/users/users.service.ts` | `listUsers()` single-table; `deleteUser()` soft delete; auto-expire on list |
+| `src/modules/users/users.schema.ts` | Replace `isActive` filter with `status` filter |
+| `src/modules/auth/auth.service.ts` | Status-based guards in login |
+| `src/db/schema/index.ts` | Remove `inviteStatusEnum`, `userInviteStatusEnum`, `userInvites` exports |
+
+### Frontend
+| File | Change |
+|------|--------|
+| `src/types/user.types.ts` | Replace `isActive + inviteStatus` with `status: UserStatus` |
+| `src/components/users/UserStatusBadge.tsx` | Single `status` prop |
+| `src/components/users/UserTable.tsx` | Show delete button for all non-deleted users |
+| `src/pages/users/UserListPage.tsx` | Update filter + delete handler name |
+
+---
+
+## Step 1 — Schema: `src/db/schema/users.ts`
+
+Add `userStatusEnum`, add `status` column, remove `isActive` and `inviteStatus`. Remove `userInvites` table and its enum entirely.
+
+```ts
+export const userStatusEnum = pgEnum('user_status', [
+  'pending',
+  'active',
+  'expired',
+  'deleted',
+]);
+
+export const users = pgTable('users', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  email: varchar('email', { length: 255 }).notNull().unique(),
+  passwordHash: varchar('password_hash', { length: 255 }),  // nullable (SSO users)
+  firstName: varchar('first_name', { length: 100 }).notNull(),
+  lastName: varchar('last_name', { length: 100 }).notNull(),
+  role: roleEnum('role').notNull().default('full_viewer'),
+  status: userStatusEnum('status').notNull().default('pending'),  // NEW unified field
+  inviteToken: varchar('invite_token', { length: 255 }),          // kept
+  inviteExpiresAt: timestamp('invite_expires_at'),                // kept
+  invitedBy: uuid('invited_by'),                                  // kept
+  lastLoginAt: timestamp('last_login_at'),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+  updatedAt: timestamp('updated_at').notNull().defaultNow(),
+  // REMOVED: isActive, inviteStatus
+});
+
+// REMOVED: inviteStatusEnum, userInviteStatusEnum, userInvites table
+```
+
+Update `src/db/schema/index.ts` — remove exports for `inviteStatusEnum`, `userInviteStatusEnum`, `userInvites`, `UserInvite`, `NewUserInvite`.
+
+---
+
+## Step 2 — Migration File
+
+**New file:** `drizzle/0007_unified_user_status.sql`
+
+```sql
+-- 1. Add status enum
+CREATE TYPE "user_status" AS ENUM ('pending', 'active', 'expired', 'deleted');
+--> statement-breakpoint
+
+-- 2. Add nullable status column temporarily
+ALTER TABLE "users" ADD COLUMN "status" "user_status";
+--> statement-breakpoint
+
+-- 3. Migrate existing data
+UPDATE "users" SET "status" = 'active'  WHERE "is_active" = true;
+--> statement-breakpoint
+UPDATE "users" SET "status" = 'deleted' WHERE "is_active" = false;
+--> statement-breakpoint
+UPDATE "users" SET "status" = 'active'  WHERE "status" IS NULL;
+--> statement-breakpoint
+
+-- 4. Make status NOT NULL with default
+ALTER TABLE "users" ALTER COLUMN "status" SET NOT NULL;
+--> statement-breakpoint
+ALTER TABLE "users" ALTER COLUMN "status" SET DEFAULT 'pending';
+--> statement-breakpoint
+
+-- 5. Drop old columns
+ALTER TABLE "users" DROP COLUMN "is_active";
+--> statement-breakpoint
+ALTER TABLE "users" DROP COLUMN "invite_status";
+--> statement-breakpoint
+
+-- 6. Drop old enum
+DROP TYPE "invite_status";
+--> statement-breakpoint
+
+-- 7. Drop userInvites table (no longer needed)
+DROP TABLE "user_invites";
+--> statement-breakpoint
+DROP TYPE "user_invite_status";
+```
+
+---
+
+## Step 3 — Env Var: `INVITE_EXPIRY_DAYS`
+
+**`src/config/env.ts`:**
+```ts
+INVITE_EXPIRY_DAYS: z.coerce.number().int().positive().default(5),
+```
+
+**`.env.example`:**
+```env
+# Days before an unaccepted invite expires (default: 5)
+INVITE_EXPIRY_DAYS=5
+```
+
+---
+
+## Step 4 — Backend: `invites.service.ts` Rewrite
+
+The `userInvites` table is gone. All invite operations now act on the `users` table directly.
+
+### `createInvite()`
+```ts
+export async function createInvite(params: CreateInviteParams): Promise<User> {
+  const email = params.email.toLowerCase();
+
+  const existing = await db.query.users.findFirst({
+    where: and(eq(users.email, email), ne(users.status, 'deleted')),
+  });
+  if (existing?.status === 'pending') throw new ConflictError('A pending invite already exists for this email');
+  if (existing) throw new ConflictError('A user with this email already exists');
+
+  const inviteToken = generateInviteToken();
+  const inviteExpiresAt = new Date();
+  inviteExpiresAt.setDate(inviteExpiresAt.getDate() + env.INVITE_EXPIRY_DAYS);
+
+  const [user] = await db.insert(users).values({
+    email,
+    firstName: params.firstName,
+    lastName: params.lastName,
+    role: params.role,
+    status: 'pending',
+    inviteToken,
+    inviteExpiresAt,
+    invitedBy: params.invitedBy,
+    passwordHash: null,
+  }).returning();
+
+  await sendInviteEmail(email, inviteToken, params.inviterName, params.role);
+  return user;
+}
+```
+
+### `validateInviteToken(token)`
+```ts
+export async function validateInviteToken(token: string): Promise<User> {
+  const user = await db.query.users.findFirst({
+    where: eq(users.inviteToken, token),
+  });
+
+  if (!user || user.status === 'deleted') throw new NotFoundError('Invalid invite token');
+  if (user.status === 'active') throw new BadRequestError('This invite has already been accepted');
+
+  // Auto-expire if past deadline
+  if (user.inviteExpiresAt && user.inviteExpiresAt < new Date()) {
+    await db.update(users).set({ status: 'expired', updatedAt: new Date() }).where(eq(users.id, user.id));
+    throw new BadRequestError('This invite has expired');
+  }
+
+  return user;
+}
+```
+
+### `acceptInvite(token, password)` — password login flow
+```ts
+export async function acceptInvite(token: string, password: string): Promise<void> {
+  const user = await validateInviteToken(token);
+
+  await db.update(users).set({
+    status: 'active',
+    passwordHash: await hashPassword(password),
+    inviteToken: null,
+    inviteExpiresAt: null,
+    updatedAt: new Date(),
+  }).where(eq(users.id, user.id));
+}
+```
+
+### `acceptInviteViaSso(email)` — SSO flow
+```ts
+export async function acceptInviteViaSso(email: string): Promise<void> {
+  const user = await db.query.users.findFirst({
+    where: and(eq(users.email, email.toLowerCase()), eq(users.status, 'pending')),
+  });
+  if (!user) return;
+
+  if (user.inviteExpiresAt && user.inviteExpiresAt < new Date()) {
+    await db.update(users).set({ status: 'expired', updatedAt: new Date() }).where(eq(users.id, user.id));
+    return;
+  }
+
+  await db.update(users).set({
+    status: 'active',
+    inviteToken: null,
+    inviteExpiresAt: null,
+    updatedAt: new Date(),
+  }).where(eq(users.id, user.id));
+}
+```
+
+### `resendInvite(userId, inviterName)`
+```ts
+export async function resendInvite(userId: string, inviterName: string): Promise<void> {
+  const user = await db.query.users.findFirst({ where: eq(users.id, userId) });
+  if (!user || user.status === 'deleted') throw new NotFoundError('User not found');
+  if (user.status === 'active') throw new BadRequestError('User has already accepted the invite');
+
+  const inviteToken = generateInviteToken();
+  const inviteExpiresAt = new Date();
+  inviteExpiresAt.setDate(inviteExpiresAt.getDate() + env.INVITE_EXPIRY_DAYS);
+
+  await db.update(users).set({
+    status: 'pending',
+    inviteToken,
+    inviteExpiresAt,
+    updatedAt: new Date(),
+  }).where(eq(users.id, userId));
+
+  await sendInviteEmail(user.email, inviteToken, inviterName, user.role);
+}
+```
+
+---
+
+## Step 5 — Backend: `users.service.ts` Rewrite
+
+### `listUsers()` — single table, auto-expire on fetch
+```ts
+export async function listUsers(query: ListUsersQuery): Promise<PaginatedUsers> {
+  // Auto-expire any pending users past their deadline before listing
+  await db.update(users)
+    .set({ status: 'expired', updatedAt: new Date() })
+    .where(and(eq(users.status, 'pending'), lt(users.inviteExpiresAt, new Date())));
+
+  const conditions = [ne(users.status, 'deleted')];  // never show deleted users
+  if (query.search) conditions.push(or(
+    ilike(users.email, `%${query.search}%`),
+    ilike(users.firstName, `%${query.search}%`),
+    ilike(users.lastName, `%${query.search}%`),
+  )!);
+  if (query.role) conditions.push(eq(users.role, query.role));
+  if (query.status) conditions.push(eq(users.status, query.status));
+
+  // Standard paginated query using whereClause
+}
+```
+
+### `deleteUser()` — soft delete for any status
+```ts
+export async function deleteUser(id: string, deletedBy: string): Promise<void> {
+  if (id === deletedBy) throw new BadRequestError('You cannot delete your own account');
+
+  const user = await db.query.users.findFirst({ where: eq(users.id, id) });
+  if (!user || user.status === 'deleted') throw new NotFoundError('User not found');
+
+  await db.update(users).set({
+    status: 'deleted',
+    inviteToken: null,
+    inviteExpiresAt: null,
+    updatedAt: new Date(),
+  }).where(eq(users.id, id));
+}
+```
+
+Route stays `DELETE /api/users/:id`. Rename controller handler from `deactivateUser` to `deleteUser`.
+
+---
+
+## Step 6 — Backend: Auth Guards
+
+**`src/modules/auth/auth.service.ts`** — replace `isActive` check with status checks:
+
+```ts
+// In loginUser() (password) and loginUserByEmail() (SSO):
+if (user.status === 'pending')  throw new UnauthorizedError('Please accept your invitation first');
+if (user.status === 'expired')  throw new UnauthorizedError('Your invitation has expired. Contact your administrator.');
+if (user.status === 'deleted')  throw new UnauthorizedError('Account not found');
+// status === 'active' → proceed
+```
+
+---
+
+## Step 7 — Frontend Types
+
+**`src/types/user.types.ts`:**
+```ts
+export type UserStatus = 'pending' | 'active' | 'expired' | 'deleted';
+
+export interface UserListItem {
+  id: string;
+  email: string;
+  firstName: string;
+  lastName: string;
+  role: Role;
+  status: UserStatus;           // replaces isActive + inviteStatus
+  lastLoginAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// Remove: InviteStatus type
+```
+
+---
+
+## Step 8 — Frontend: `UserStatusBadge.tsx`
+
+```tsx
+interface UserStatusBadgeProps {
+  status: UserStatus;
+}
+
+const UserStatusBadge = ({ status }: UserStatusBadgeProps) => {
+  const config = {
+    active:  { variant: 'success', label: 'Active' },
+    pending: { variant: 'warning', label: 'Invite Pending' },
+    expired: { variant: 'error',   label: 'Invite Expired' },
+    deleted: { variant: 'default', label: 'Deleted' },
+  }[status];
+
+  return <Badge variant={config.variant}>{config.label}</Badge>;
+};
+```
+
+---
+
+## Step 9 — Frontend: `UserTable.tsx`
+
+Show delete button for all non-deleted users (pending, active, expired):
+
+```tsx
+// Remove:
+{user.isActive && (
+  <button ... title="Deactivate">
+
+// Replace with:
+{user.status !== 'deleted' && (
+  <button
+    onClick={() => onDelete(user)}
+    className="p-1.5 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+    title="Delete"
+  >
+    <Trash2 className="h-4 w-4" />
+  </button>
+)}
+```
+
+Rename `onDeactivate` prop to `onDelete` throughout (interface + call sites in `UserListPage`).
+
+---
+
+## Implementation Order
+
+1. Migration file (`0007_unified_user_status.sql`)
+2. Backend schema (`users.ts`) — new enum, remove old columns/table
+3. Backend env var — `INVITE_EXPIRY_DAYS`
+4. Backend invites service — rewrite all functions
+5. Backend users service — `listUsers`, `deleteUser`
+6. Backend auth service — status guards
+7. Frontend types — `UserStatus`
+8. Frontend `UserStatusBadge` — single prop
+9. Frontend `UserTable` — delete for all non-deleted
+
+---
+
+## Before / After
+
+| Aspect | Before | After |
+|--------|--------|-------|
+| User state fields | `isActive: boolean` + `inviteStatus: enum` | `status: 'pending\|active\|expired\|deleted'` |
+| Pending user storage | `userInvites` table (separate) | `users` table directly |
+| `listUsers()` complexity | Union of 2 tables, merged in memory | Single DB query |
+| Delete pending user | ❌ button hidden | ✅ soft delete → `status='deleted'` |
+| Delete active user | Sets `isActive=false` (deactivate) | Sets `status='deleted'` |
+| Invite expiry | 7 days, hardcoded | `INVITE_EXPIRY_DAYS` env var, default 5 |
+| Expiry detection | Not implemented | Auto-updated on each `listUsers()` call |
+
+---
+
+## Completion Log
+
+### ✅ Completed on 2026-03-16
+
+All components of the Unified User Status Model have been successfully implemented:
+
+**Backend - Database:**
+- ✅ Created migration file `drizzle/0007_unified_user_status.sql` — adds `user_status` enum and consolidates status columns
+- ✅ Updated schema: Added `userStatusEnum`, `status` column; removed `isActive`, `inviteStatus`, `userInvites` table
+
+**Backend - Services & Configuration:**
+- ✅ Added `INVITE_EXPIRY_DAYS` env var to `src/config/env.ts` (default: 5 days)
+- ✅ Rewrote `invites.service.ts` — all functions now operate on `users` table directly
+- ✅ Rewrote `users.service.ts` — `listUsers()` single-table query with auto-expiry; `deleteUser()` soft-deletes any status
+- ✅ Updated `users.schema.ts` — `status` filter replaces `isActive` filter
+- ✅ Updated `users.controller.ts` — `deactivateUser` → `deleteUser` rename
+- ✅ Updated `auth.service.ts` — all login paths now check `status` field (pending/expired/deleted/active)
+
+**Frontend - Types & Components:**
+- ✅ Added `UserStatus` type to `user.types.ts`; updated `UserListItem`, `ListUsersParams`, `UpdateUserInput`
+- ✅ Rewrote `UserStatusBadge.tsx` — single `status` prop with status-specific badge rendering
+- ✅ Updated `UserTable.tsx` — delete button for all non-deleted users; added re-invite button
+- ✅ Updated `UserListPage.tsx` — renamed `deactivateUser` → `deleteUser`; added `handleResendInvite` handler
+- ✅ Updated `userStore.ts` — renamed `deactivateUser` → `deleteUser`; added `resendInvite` action
+- ✅ Updated `users.ts` API — renamed `deactivate` → `delete`; updated `getStats()` to use `status='active'`
+- ✅ Updated `InvitesTab.tsx` — status badge mappings updated to reflect new model
+
+**Key Benefits:**
+- Single `status` field replaces dual-flag system
+- `listUsers()` now single DB query (no in-memory union)
+- Delete works for all statuses (pending, active, expired)
+- Invite expiry configurable via env var
+- Complete type safety with `UserStatus` enum
+
+---
+
+---
+
+# Implementation Plan: Re-invite for Expired and Deleted Users
+
+**STATUS:** ✅ COMPLETED (2026-03-16)
+
+**Location:** Backend — `knoxadmin` + Frontend — `knoxadmin-client`
+
+## Overview
+
+Allow admins to re-invite users whose status is `expired` or `deleted` using the **same email address** and the **same user record** — no new row is created. This avoids duplicate email violations (the `email` column is UNIQUE) and preserves audit history (same user ID, original `createdAt`).
+
+**Re-invite is allowed for:**
+
+| Current status | Action label | Result |
+|----------------|-------------|--------|
+| `pending` | Resend Invite | New token, reset expiry → stays `pending` |
+| `expired` | Re-invite | New token, new expiry → back to `pending` |
+| `deleted` | Re-invite | New token, new expiry → back to `pending` |
+| `active` | ❌ blocked | Error: "User is already active" |
+
+**Key rule:** One row per email address, always. Re-invite updates that row in place.
+
+---
+
+## Files to Modify
+
+### Backend
+| File | Change |
+|------|--------|
+| `src/modules/invites/invites.service.ts` | Update `resendInvite()` to accept `expired` and `deleted` statuses |
+| `src/modules/invites/invites.routes.ts` | Confirm resend route exists; no new route needed |
+
+### Frontend
+| File | Change |
+|------|--------|
+| `src/components/users/UserTable.tsx` | Add resend/re-invite button for `pending`, `expired`, `deleted` users |
+| `src/pages/users/UserListPage.tsx` | Wire up `onResendInvite` handler |
+| `src/stores/userStore.ts` | Add `resendInvite(userId)` action |
+| `src/api/invites.ts` | Confirm `resend(userId)` API call exists |
+
+---
+
+## Step 1 — Backend: Update `resendInvite()` in `invites.service.ts`
+
+The function from the previous plan only handles `pending` and `expired`. Extend it to also accept `deleted`:
+
+```ts
+export async function resendInvite(userId: string, inviterName: string): Promise<void> {
+  const user = await db.query.users.findFirst({ where: eq(users.id, userId) });
+
+  if (!user) throw new NotFoundError('User not found');
+
+  // Only block re-invite for active users
+  if (user.status === 'active') {
+    throw new BadRequestError('User is already active and does not need a new invitation');
+  }
+
+  // Allow: pending, expired, deleted — all reuse the same row
+  const inviteToken = generateInviteToken();
+  const inviteExpiresAt = new Date();
+  inviteExpiresAt.setDate(inviteExpiresAt.getDate() + env.INVITE_EXPIRY_DAYS);
+
+  await db.update(users).set({
+    status: 'pending',
+    inviteToken,
+    inviteExpiresAt,
+    updatedAt: new Date(),
+  }).where(eq(users.id, userId));
+
+  await sendInviteEmail(user.email, inviteToken, inviterName, user.role);
+}
+```
+
+> **Note for deleted users:** Re-inviting a deleted user reactivates their record (back to `pending`). This is intentional — admin is making a conscious decision to re-invite. The original `createdAt` and user ID are preserved.
+
+No new route needed — the existing `POST /api/invites/:id/resend` route (or equivalent) already handles this. Confirm the route calls `resendInvite()` and passes `request.user` as the inviter.
+
+---
+
+## Step 2 — Frontend: Add Re-invite Button in `UserTable.tsx`
+
+Add a resend/re-invite icon button alongside the existing Edit and Delete buttons. Use the `Mail` icon (already imported in other user components) to distinguish it from delete.
+
+```tsx
+// Add MailPlus to lucide-react imports
+import { Pencil, Trash2, Users, MailPlus } from 'lucide-react';
+
+// In the actions cell, add re-invite button for non-active users:
+{(user.status === 'pending' || user.status === 'expired' || user.status === 'deleted') && (
+  <button
+    onClick={() => onResendInvite(user)}
+    className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+    title={user.status === 'pending' ? 'Resend Invite' : 'Re-invite'}
+  >
+    <MailPlus className="h-4 w-4" />
+  </button>
+)}
+```
+
+**Update `UserTableProps` interface:**
+```ts
+interface UserTableProps {
+  // ... existing props
+  onResendInvite: (user: UserListItem) => void;  // ADD
+}
+```
+
+**Action button order in the row:** Edit → Re-invite → Delete
+
+---
+
+## Step 3 — Frontend: Wire Up in `UserListPage.tsx`
+
+```tsx
+const handleResendInvite = async (user: UserListItem) => {
+  try {
+    await resendInvite(user.id);
+    // Show success toast/message: "Invitation sent to {user.email}"
+    fetchUsers();  // refresh list
+  } catch (error) {
+    // Show error message
+  }
+};
+
+// Pass to UserTable:
+<UserTable
+  ...
+  onResendInvite={handleResendInvite}
+/>
+```
+
+---
+
+## Step 4 — Frontend: Store Action in `userStore.ts`
+
+```ts
+resendInvite: async (userId: string) => {
+  await invitesApi.resend(userId);
+},
+```
+
+Confirm `invitesApi.resend(id)` calls `POST /api/invites/:id/resend`. If the API client doesn't have this, add it to `src/api/invites.ts`:
+
+```ts
+resend: (id: string) => api.post(`/invites/${id}/resend`),
+```
+
+---
+
+## Confirmation Dialog for Deleted Users
+
+When admin clicks Re-invite on a **deleted** user, show a confirmation before sending:
+
+> "This user was previously deleted. Re-inviting will restore their account and send them a new invitation. Continue?"
+
+For `pending` and `expired`, no confirmation needed — just send immediately.
+
+This can be implemented in `UserListPage.tsx` by checking `user.status === 'deleted'` in `handleResendInvite` and showing a confirm dialog before calling the API.
+
+---
+
+## Summary
+
+| Status | Edit button | Re-invite button | Delete button |
+|--------|:-----------:|:----------------:|:-------------:|
+| `pending` | ✅ | ✅ Resend Invite | ✅ |
+| `active` | ✅ | ❌ hidden | ✅ |
+| `expired` | ✅ | ✅ Re-invite | ✅ |
+| `deleted` | ✅ | ✅ Re-invite (with confirm) | ❌ already deleted |
+
+> **Note:** The Delete button is hidden for `deleted` users (already soft-deleted). The Re-invite button is hidden for `active` users (nothing to resend).
+
+---
+
+## Completion Log
+
+### ✅ Completed on 2026-03-16
+
+The Re-invite for Expired and Deleted Users feature has been fully implemented, building on the Unified User Status Model changes:
+
+**Backend:**
+- ✅ Updated `resendInvite()` in `invites.service.ts` — now accepts `pending`, `expired`, and `deleted` statuses
+- ✅ Existing `POST /api/invites/:id/resend` route already handles the functionality (no new route needed)
+- ✅ Updated `invites.controller.ts` to handle resend response properly
+
+**Frontend:**
+- ✅ Added `MailPlus` icon button in `UserTable.tsx` for re-inviting non-active users
+- ✅ Added `onResendInvite` prop and handler in `UserTable.tsx`
+- ✅ Added `handleResendInvite()` method in `UserListPage.tsx` with confirmation for deleted users
+- ✅ Added `resendInvite(userId)` action to `userStore.ts`
+- ✅ Backend `invitesApi.resend(id)` already exists and calls correct endpoint
+
+**User Experience:**
+- ✅ Pending invites → "Resend Invite" button (no confirmation)
+- ✅ Expired invites → "Re-invite" button (no confirmation)
+- ✅ Deleted users → "Re-invite" button (shows confirmation dialog before sending)
+- ✅ Active users → No re-invite button (nothing to resend)
+- ✅ Email sent with updated token/expiry when re-inviting
+
+**Key Features:**
+- Re-invite reuses same user row (no duplicate email conflicts)
+- Preserves original user ID and creation date for audit trail
+- Automatic email delivery with new invite token
+- One row per email address maintained throughout lifecycle
