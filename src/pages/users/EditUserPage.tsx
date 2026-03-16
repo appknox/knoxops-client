@@ -99,7 +99,7 @@ const EditUserPage = () => {
     return (
       <div className="text-center py-12">
         <p className="text-gray-500">User not found</p>
-        <Link to="/users" className="text-primary-600 hover:underline mt-2 block">
+        <Link to="/settings/users" className="text-primary-600 hover:underline mt-2 block">
           Back to Users
         </Link>
       </div>
@@ -111,7 +111,7 @@ const EditUserPage = () => {
       {/* Header */}
       <div className="mb-6">
         <Link
-          to="/users"
+          to="/settings/users"
           className="inline-flex items-center text-sm text-gray-500 hover:text-gray-700 mb-4"
         >
           <ArrowLeft className="h-4 w-4 mr-1" />

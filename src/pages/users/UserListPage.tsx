@@ -37,7 +37,7 @@ const UserListPage = () => {
             Manage user access and permissions across the platform.
           </p>
         </div>
-        <Link to="/users/add">
+        <Link to="/settings/users/add">
           <Button className="shadow-md shadow-primary-500/20">
             <Plus className="h-4 w-4 mr-2" />
             Add New User

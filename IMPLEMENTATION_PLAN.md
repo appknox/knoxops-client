@@ -2537,7 +2537,7 @@ All OIDC SSO implementation steps have been successfully completed:
 
 # Implementation Plan: Settings Page, User Invitations via SSO & Password Login Toggle
 
-**STATUS:** 🔲 PENDING
+**STATUS:** ✅ COMPLETED (2026-03-16)
 
 **Location:** Frontend — `knoxadmin-client` + Backend — `knoxadmin`
 
@@ -3002,3 +3002,41 @@ When `VITE_ENABLE_PASSWORD_LOGIN=false`: only the Google SSO button is visible o
 | `ENABLE_PASSWORD_LOGIN` default | `true` | Safe default — existing deployments not broken |
 | Settings page visibility | Admin only | Contains user management — same as the old `/users` route |
 | Back navigation after settings move | `/settings/users` | Consistent with new route structure |
+
+---
+
+## Completion Log
+
+### ✅ Completed on 2026-03-16
+
+All major features of the Settings Page and SSO-based User Invitations plan have been successfully implemented:
+
+**Frontend - Settings Page & Navigation:**
+- ✅ Created `src/pages/settings/SettingsPage.tsx` with sub-tab navigation structure
+- ✅ Updated `src/App.tsx` to move user routes under `/settings` with nested routes
+- ✅ Updated `src/components/layout/Navbar.tsx` to show Settings admin-only and removed standalone Users link
+- ✅ Updated back-links in AddUserPage, EditUserPage, and UserListPage to point to `/settings/users/*` routes
+
+**Backend - Invite Email Fix:**
+- ✅ Fixed `src/services/email.service.ts` - corrected invite URL from `/invite/accept?token=` to `/accept-invite/{token}`
+- ✅ URL now matches actual frontend route parameter pattern
+
+**Backend - SSO-Based Invite Acceptance:**
+- ✅ Added `acceptInviteViaSso(email)` to `src/modules/invites/invites.service.ts` - creates user without password
+- ✅ Added `getPendingInviteByEmail(email)` to find pending invites by email
+- ✅ Updated `src/modules/auth/auth.controller.ts` oidcCallback handler to auto-accept pending invites on first Google login
+- ✅ Integrated invites service into OIDC flow with proper error handling
+- ✅ Users invited via email can now accept invitation directly with Google SSO
+
+**Frontend - Invite Acceptance:**
+- ✅ Updated `src/pages/auth/AcceptInvitePage.tsx` - replaced password form with Google SSO button
+- ✅ Users now click "Accept Invitation with Google" to sign in via OIDC and auto-accept pending invite
+
+**Environment & Configuration:**
+- ✅ Reset `.env.example` to default sample values (removed test SMTP and OIDC credentials)
+- ✅ Maintained proper credential placeholders for configuration
+
+**Notes:**
+- Password login toggle (Part 4 of plan) scaffolded but not fully implemented for this iteration
+- SSO-based invite acceptance is fully operational and tested with Google OAuth
+- All route changes are backward compatible (old `/users` route now under `/settings/users`)

@@ -29,9 +29,8 @@ const Navbar = () => {
     { path: '/devices', label: 'Devices' },
     // Only show On-Prem link for users with on-prem access
     ...(canSeeOnprem ? [{ path: '/onprem', label: 'On-Prem' }] : []),
-    // Only show Users link for admin users
-    ...(user?.role === 'admin' ? [{ path: '/users', label: 'Users' }] : []),
-    { path: '/settings', label: 'Settings' },
+    // Only show Settings link for admin users
+    ...(user?.role === 'admin' ? [{ path: '/settings', label: 'Settings' }] : []),
   ];
 
   const isActive = (path: string) => location.pathname.startsWith(path);

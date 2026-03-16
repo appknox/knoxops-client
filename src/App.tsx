@@ -3,6 +3,7 @@ import { AppLayout } from '@/components/layout';
 import { LoginPage, AcceptInvitePage, AuthCallback, AuthError } from '@/pages/auth';
 import { DeviceListPage, RegisterDevicePage } from '@/pages/devices';
 import { UserListPage, AddUserPage, EditUserPage } from '@/pages/users';
+import { SettingsPage } from '@/pages/settings';
 import { OnpremListPage, RegisterOnpremPage } from '@/pages/onprem';
 import { ProfilePage } from '@/pages/profile';
 
@@ -25,10 +26,13 @@ function App() {
           <Route path="/devices" element={<DeviceListPage />} />
           <Route path="/devices/register" element={<RegisterDevicePage />} />
 
-          {/* User management routes (admin only - protected in AppLayout) */}
-          <Route path="/users" element={<UserListPage />} />
-          <Route path="/users/add" element={<AddUserPage />} />
-          <Route path="/users/:id/edit" element={<EditUserPage />} />
+          {/* Settings with nested routes (admin only - protected in AppLayout) */}
+          <Route path="/settings" element={<SettingsPage />}>
+            <Route index element={<Navigate to="/settings/users" replace />} />
+            <Route path="users" element={<UserListPage />} />
+            <Route path="users/add" element={<AddUserPage />} />
+            <Route path="users/:id/edit" element={<EditUserPage />} />
+          </Route>
 
           {/* On-Prem management routes (specific routes before generic) */}
           <Route path="/onprem" element={<OnpremListPage />} />
