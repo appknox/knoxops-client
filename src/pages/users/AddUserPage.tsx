@@ -46,7 +46,7 @@ const AddUserPage = () => {
       });
       setSuccess(true);
       setTimeout(() => {
-        navigate('/users');
+        navigate('/settings/users');
       }, 2000);
     } catch {
       // Error handled in store
@@ -126,7 +126,7 @@ const AddUserPage = () => {
           <div className="mb-6">
             <Select
               label="Select Role"
-              value={selectedRole}
+              value={selectedRole === 'admin' ? 'admin' : 'full_viewer'}
               onChange={(e) => setSelectedRole(e.target.value as Role)}
               options={roleOptions}
             />

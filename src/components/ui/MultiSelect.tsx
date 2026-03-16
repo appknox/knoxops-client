@@ -12,6 +12,7 @@ export interface MultiSelectProps {
   onChange: (values: string[]) => void;
   placeholder?: string;
   label?: string;
+  className?: string;
 }
 
 export const MultiSelect = ({
@@ -20,6 +21,7 @@ export const MultiSelect = ({
   onChange,
   placeholder = 'Select...',
   label,
+  className = '',
 }: MultiSelectProps) => {
   const [isOpen, setIsOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -60,7 +62,7 @@ export const MultiSelect = ({
   };
 
   return (
-    <div ref={containerRef} className="relative w-full">
+    <div ref={containerRef} className={`relative ${className || 'w-full'}`}>
       {label && (
         <label className="block text-xs font-medium text-gray-700 mb-1.5 capitalize">
           {label}

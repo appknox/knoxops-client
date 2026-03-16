@@ -11,7 +11,11 @@ import type {
 
 export const usersApi = {
   list: async (params?: ListUsersParams): Promise<UserListResponse> => {
-    const response = await apiClient.get<UserListResponse>('/users', { params });
+    const apiParams = { ...params };
+    if (params?.status && typeof params.status === 'string') {
+      apiParams.status = params.status;
+    }
+    const response = await apiClient.get<UserListResponse>('/users', { params: apiParams });
     return response.data;
   },
 

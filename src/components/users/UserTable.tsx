@@ -108,15 +108,30 @@ const UserTable = ({
                     >
                       <Pencil className="h-4 w-4" />
                     </button>
-                    {(user.status === 'pending' || user.status === 'expired' || user.status === 'deleted') && (
-                      <button
-                        onClick={() => onResendInvite(user)}
-                        className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
-                        title={user.status === 'pending' ? 'Resend Invite' : 'Re-invite'}
-                      >
-                        <MailPlus className="h-4 w-4" />
-                      </button>
-                    )}
+                    {(user.status === 'pending' || user.status === 'expired' || user.status === 'deleted') && (() => {
+                      const sentAt = user.inviteLastSentAt ? new Date(user.inviteLastSentAt) : null;
+                      const cooldownMs = 24 * 60 * 60 * 1000;
+                      const throttled = sentAt ? (Date.now() - sentAt.getTime()) < cooldownMs : false;
+                      const nextAllowed = sentAt ? new Date(sentAt.getTime() + cooldownMs) : null;
+                      const label = user.status === 'pending' ? 'Resend Invite' : 'Re-invite';
+                      const title = throttled && nextAllowed
+                        ? `${label} — available after ${nextAllowed.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} today`
+                        : label;
+                      return (
+                        <button
+                          onClick={() => !throttled && onResendInvite(user)}
+                          disabled={throttled}
+                          className={`p-1.5 rounded-lg transition-colors ${
+                            throttled
+                              ? 'text-gray-300 cursor-not-allowed'
+                              : 'text-blue-600 hover:bg-blue-50'
+                          }`}
+                          title={title}
+                        >
+                          <MailPlus className="h-4 w-4" />
+                        </button>
+                      );
+                    })()}
                     {user.status !== 'deleted' && (
                       <button
                         onClick={() => onDelete(user)}

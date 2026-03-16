@@ -98,6 +98,8 @@ export interface OnpremDeployment {
   lastUpdatedBy: string | null;
   createdAt: string;
   updatedAt: string;
+  // Documents
+  documents?: OnpremDocument[];
 }
 
 // List item (optimized for table display)
@@ -331,4 +333,17 @@ export interface CombinedHistoryEntry {
 
 export interface CombinedHistoryResponse {
   data: CombinedHistoryEntry[];
+}
+
+// Document types
+export type DocumentCategory = 'rfp' | 'other';
+
+export interface OnpremDocument {
+  id: string;
+  deploymentId: string;
+  category: DocumentCategory;
+  fileName: string;
+  mimeType: string | null;
+  fileSize: number | null;
+  createdAt: string;
 }

@@ -9,12 +9,13 @@ import type {
   Invite,
   CreateInviteInput,
   Role,
+  UserStatus,
 } from '@/types';
 
 interface UserFilters {
   search: string;
   role: Role | '';
-  isActive: '' | 'true' | 'false';
+  status: UserStatus[];
 }
 
 interface UserState {
@@ -54,7 +55,7 @@ interface UserState {
 const initialFilters: UserFilters = {
   search: '',
   role: '',
-  isActive: '',
+  status: [],
 };
 
 export const useUserStore = create<UserState>((set, get) => ({
@@ -83,7 +84,7 @@ export const useUserStore = create<UserState>((set, get) => ({
 
       if (filters.search) params.search = filters.search;
       if (filters.role) params.role = filters.role;
-      if (filters.isActive) params.isActive = filters.isActive === 'true';
+      if (filters.status.length > 0) params.status = filters.status.join(',');
 
       const response = await usersApi.list(params);
       set({

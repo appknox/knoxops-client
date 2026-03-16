@@ -3704,3 +3704,1138 @@ The Re-invite for Expired and Deleted Users feature has been fully implemented, 
 - Preserves original user ID and creation date for audit trail
 - Automatic email delivery with new invite token
 - One row per email address maintained throughout lifecycle
+---
+
+# Implementation Plan: User Management UI Fixes
+
+**STATUS:** ✅ COMPLETED
+
+## Overview
+
+Four UI fixes for the user management pages:
+1. **PermissionsMatrix role reset bug** — Selecting module permissions resets the role dropdown to admin
+2. **Edit/navigation fixes** — Edit icon goes to wrong path; back navigation also wrong
+3. **Status filter overhaul** — Replace boolean `isActive` filter with multi-select status filter
+4. **Filters layout** — All filters in single row with narrower search box
+
+---
+
+## Files to Modify
+
+| File | Changes |
+|------|---------|
+| `src/pages/users/AddUserPage.tsx` | Fix role dropdown logic; fix navigate path |
+| `src/pages/users/EditUserPage.tsx` | Fix role dropdown; fix navigate path; fix `isActive` → `status` |
+| `src/pages/users/UserListPage.tsx` | Fix `handleEdit` navigation path |
+| `src/components/users/UserFilters.tsx` | Replace status options; update layout to single row |
+| `src/stores/userStore.ts` | Replace `isActive` filter with `status: UserStatus[]` |
+| `src/api/users.ts` | Update filter params sent to API |
+
+---
+
+## Fix 1 — PermissionsMatrix Role Reset Bug
+
+### Problem
+
+`AddUserPage` and `EditUserPage` use a `<Select>` dropdown with only two options:
+- `admin`
+- `full_viewer`
+
+`PermissionsMatrix` calls `onChange` with derived roles like `devices_admin`, `devices_viewer`, `onprem_admin`, `onprem_viewer`, `full_editor`. When the `<Select>` receives a value not in its options list, it falls back to the first option (`admin`) — causing the reset bug.
+
+### Root Cause
+
+The `<Select>` value is bound to `selectedRole` directly. When `selectedRole` becomes `devices_admin` (from the matrix), the dropdown has no matching option and silently resets.
+
+### Fix: Decouple Dropdown from Derived Role
+
+The dropdown should only distinguish between "Admin" and "Member" (any non-admin role). The matrix drives the actual role value.
+
+**`src/pages/users/AddUserPage.tsx` and `src/pages/users/EditUserPage.tsx`:**
+
+```tsx
+// roleOptions stays as:
+const roleOptions = [
+  { value: 'admin', label: 'Admin' },
+  { value: 'member', label: 'Member' },  // virtual — not an actual role
+];
+
+// Dropdown value: 'admin' if admin, otherwise 'member'
+const dropdownValue = selectedRole === 'admin' ? 'admin' : 'member';
+
+// On dropdown change:
+const handleDropdownChange = (value: string) => {
+  if (value === 'admin') {
+    setSelectedRole('admin');
+  } else {
+    // Default member role; matrix will update to specific role
+    setSelectedRole('full_viewer');
+  }
+};
+
+// Matrix onChange updates selectedRole to exact derived role:
+<PermissionsMatrix
+  role={selectedRole}
+  onChange={(role) => setSelectedRole(role)}
+  disabled={selectedRole === 'admin'}
+/>
+
+// Select uses dropdownValue, not selectedRole:
+<Select
+  value={dropdownValue}
+  onValueChange={handleDropdownChange}
+>
+```
+
+When `selectedRole === 'admin'`, the matrix should be hidden or shown as read-only (admins have full permissions by definition).
+
+---
+
+## Fix 2 — Edit Navigation Fixes
+
+### Problem A: `UserListPage` edit icon uses wrong path
+
+**File:** `src/pages/users/UserListPage.tsx`
+
+Current:
+```ts
+const handleEdit = (user: UserListItem) => {
+  navigate(`/users/${user.id}/edit`);
+};
+```
+
+Fix:
+```ts
+const handleEdit = (user: UserListItem) => {
+  navigate(`/settings/users/${user.id}/edit`);
+};
+```
+
+### Problem B: `AddUserPage` navigates to wrong path after submit
+
+**File:** `src/pages/users/AddUserPage.tsx`
+
+Current:
+```ts
+navigate('/users');
+```
+
+Fix:
+```ts
+navigate('/settings/users');
+```
+
+Also fix the cancel/back button if it also uses `/users`.
+
+### Problem C: `EditUserPage` navigates to wrong path after submit
+
+**File:** `src/pages/users/EditUserPage.tsx`
+
+Current:
+```ts
+navigate('/users');
+```
+
+Fix:
+```ts
+navigate('/settings/users');
+```
+
+---
+
+## Fix 3 — EditUserPage: Fix Old `isActive` Field Reference
+
+**File:** `src/pages/users/EditUserPage.tsx`
+
+`UserStatusBadge` is called with the old `isActive` prop:
+
+Current:
+```tsx
+<UserStatusBadge isActive={selectedUser.isActive} />
+```
+
+Fix (using the new unified status field):
+```tsx
+<UserStatusBadge status={selectedUser.status} />
+```
+
+Also check: if `roleOptions` in `EditUserPage` still only has `admin` and `full_viewer`, apply the same dropdown decoupling fix as in Fix 1.
+
+---
+
+## Fix 4 — Status Filter: Replace Boolean with Multi-Select
+
+### 4a. `src/stores/userStore.ts`
+
+**Update `UserFilters` interface:**
+
+Current:
+```ts
+interface UserFilters {
+  search: string;
+  role: string;
+  isActive: '' | 'true' | 'false';
+  // ...
+}
+```
+
+Change to:
+```ts
+interface UserFilters {
+  search: string;
+  role: string;
+  status: UserStatus[];   // [] means "all" (no filter)
+  // ...
+}
+```
+
+**Update `initialFilters`:**
+
+Current:
+```ts
+const initialFilters: UserFilters = {
+  search: '',
+  role: '',
+  isActive: '',
+};
+```
+
+Change to:
+```ts
+const initialFilters: UserFilters = {
+  search: '',
+  role: '',
+  status: [],
+};
+```
+
+**Update `fetchUsers` to pass status array:**
+```ts
+// In fetchUsers, when building params:
+if (filters.status.length > 0) {
+  params.status = filters.status;  // or serialize as needed by API
+}
+```
+
+### 4b. `src/api/users.ts`
+
+Update `ListUsersParams` or the fetch params to accept `status?: UserStatus[]` (array) instead of `isActive?: boolean`.
+
+If the backend `GET /users` only accepts a single `status` query param, send the first selected status or adjust to send multiple values (e.g., `status[]=active&status[]=pending`). Confirm with backend route schema.
+
+### 4c. `src/components/users/UserFilters.tsx`
+
+Replace the single status dropdown with a multi-select:
+
+**Current `statusOptions`:**
+```ts
+const statusOptions = [
+  { value: '', label: 'All Status' },
+  { value: 'true', label: 'Active' },
+  { value: 'false', label: 'Inactive' },
+];
+```
+
+**New multi-select options:**
+```ts
+const statusOptions: { value: UserStatus; label: string }[] = [
+  { value: 'active', label: 'Active' },
+  { value: 'pending', label: 'Pending' },
+  { value: 'expired', label: 'Expired' },
+  { value: 'deleted', label: 'Deleted' },
+];
+```
+
+Use checkboxes or a multi-select dropdown component. Each option toggles the corresponding status in the `filters.status` array.
+
+---
+
+## Fix 5 — Filters Layout: Single Row
+
+**File:** `src/components/users/UserFilters.tsx`
+
+### Current Layout
+Filters wrap in a flex container across multiple rows.
+
+### Target Layout
+Single row: `[Search (narrower)] [Role dropdown] [Status multi-select] [Clear button]`
+
+```tsx
+<div className="flex items-center gap-3">
+  <Input
+    className="w-48"   {/* narrower than current */}
+    placeholder="Search users..."
+    value={filters.search}
+    onChange={(e) => updateFilter('search', e.target.value)}
+  />
+
+  <Select value={filters.role} onValueChange={(v) => updateFilter('role', v)}>
+    {/* role options */}
+  </Select>
+
+  {/* Multi-select status dropdown */}
+  <StatusMultiSelect
+    value={filters.status}
+    onChange={(v) => updateFilter('status', v)}
+    options={statusOptions}
+  />
+
+  {hasActiveFilters && (
+    <Button variant="ghost" onClick={clearFilters}>
+      Clear
+    </Button>
+  )}
+</div>
+```
+
+The `hasActiveFilters` check should include `filters.status.length > 0` (replacing old `filters.isActive !== ''`).
+
+---
+
+## Implementation Order
+
+1. Fix `userStore.ts` — update `UserFilters` interface and `initialFilters` first (type changes propagate)
+2. Fix `src/api/users.ts` — update params to use `status[]`
+3. Fix `UserFilters.tsx` — new multi-select layout
+4. Fix `AddUserPage.tsx` — dropdown decoupling + navigation
+5. Fix `EditUserPage.tsx` — dropdown decoupling + navigation + status badge
+6. Fix `UserListPage.tsx` — edit navigation path
+
+---
+
+## Completion Log
+
+### ✅ Completed on 2026-03-16
+
+All four UI fixes for user management have been fully implemented:
+
+**Backend:**
+- ✅ Updated `knoxadmin/src/modules/users/users.schema.ts` — accepts comma-separated status values and transforms to array with validation
+- ✅ Updated `knoxadmin/src/modules/users/users.service.ts` — uses `inArray(users.status, status)` for multi-status filtering
+
+**Frontend:**
+- ✅ Fixed `src/pages/users/UserListPage.tsx` — `handleEdit()` navigates to `/settings/users/:id/edit`
+- ✅ Fixed `src/pages/users/AddUserPage.tsx` — redirects to `/settings/users` after success; decoupled role dropdown from derived roles (shows 'admin' or 'full_viewer' but maintains actual role)
+- ✅ Fixed `src/pages/users/EditUserPage.tsx` — redirects to `/settings/users` after submit; fixed `UserStatusBadge` props from `isActive={...}` to `status={...}`; applied role dropdown decoupling
+- ✅ Updated `src/stores/userStore.ts` — replaced `isActive` filter with `status: UserStatus[]` array; serializes to comma-separated string in `fetchUsers()`
+- ✅ Updated `src/types/user.types.ts` — `ListUsersParams.status` now accepts `string` (comma-separated values)
+- ✅ Updated `src/api/users.ts` — properly serializes status array for API calls
+- ✅ Completely rewrote `src/components/users/UserFilters.tsx` — uses `MultiSelect` component with single-row layout: narrower search (min-w-[180px] max-w-[240px]), role select, status multi-select, inline clear button
+
+**User Experience:**
+- ✅ PermissionsMatrix role selection no longer resets dropdown to admin
+- ✅ Edit icon correctly navigates to `/settings/users/:id/edit` with prefilled data
+- ✅ Add user form redirects to correct `/settings/users` page after creation
+- ✅ Edit user form redirects to correct `/settings/users` page after update
+- ✅ Status filter supports multi-select: Active, Pending, Expired, Deleted
+- ✅ All filters fit in single row with narrower search input
+- ✅ Clear button appears inline when filters are active
+
+**Key Features:**
+- Role dropdown intelligently displays 'Admin' or 'Member' label while PermissionsMatrix controls actual derived role value
+- Multi-select status filter allows filtering by multiple statuses simultaneously (e.g., Pending + Expired)
+- Narrower search input (max-w-[240px]) accommodates all filters in single row without wrapping
+
+---
+
+# Implementation Plan: RFP & Other Document Uploads + Download All as ZIP
+
+**STATUS:** ✅ COMPLETED
+
+## Overview
+
+Two related features:
+1. **Multi-file uploads** on the onprem form — two new sections: "RFP Documents" and "Other Documents", each supporting multiple files (PDF, DOC, DOCX, XLS, XLSX, CSV, TXT, ZIP, etc.)
+2. **Download All** on the listing page — downloads a single ZIP containing all files for that deployment: prerequisite file, SSL certificate, all RFP docs, all other docs
+
+---
+
+## Current File Handling (Context)
+
+| File Type | Stored In | DB Column | Storage Path |
+|-----------|-----------|-----------|--------------|
+| Prerequisite | Single file | `prerequisite_file_url`, `prerequisite_file_name` | `uploads/prerequisites/` |
+| SSL Certificate | Single file | `ssl_certificate_file_url` | `uploads/ssl-certificates/` |
+
+Files are stored on local disk. Upload is multipart via Fastify. Download streams via `fs.createReadStream`.
+
+---
+
+## Database Changes
+
+### New Table: `onprem_documents`
+
+A separate table to hold multiple files per deployment, replacing the need to add more columns to `onprem_deployments`.
+
+**File:** `knoxadmin/src/db/schema/onprem.ts`
+
+```ts
+export const documentCategoryEnum = pgEnum('document_category', ['rfp', 'other']);
+
+export const onpremDocuments = pgTable('onprem_documents', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  deploymentId: uuid('deployment_id')
+    .notNull()
+    .references(() => onpremDeployments.id, { onDelete: 'cascade' }),
+  category: documentCategoryEnum('category').notNull(),  // 'rfp' | 'other'
+  fileName: varchar('file_name', { length: 255 }).notNull(),   // original filename
+  fileUrl: text('file_url').notNull(),                         // path on disk
+  mimeType: varchar('mime_type', { length: 255 }),
+  fileSize: integer('file_size'),                              // bytes
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+});
+
+export type OnpremDocument = typeof onpremDocuments.$inferSelect;
+export type NewOnpremDocument = typeof onpremDocuments.$inferInsert;
+```
+
+### Migration
+
+**File:** `knoxadmin/drizzle/0008_onprem_documents.sql`
+
+```sql
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'document_category') THEN
+    CREATE TYPE "document_category" AS ENUM ('rfp', 'other');
+  END IF;
+END $$;
+-->statement-breakpoint
+CREATE TABLE IF NOT EXISTS "onprem_documents" (
+  "id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+  "deployment_id" uuid NOT NULL REFERENCES "onprem_deployments"("id") ON DELETE CASCADE,
+  "category" "document_category" NOT NULL,
+  "file_name" varchar(255) NOT NULL,
+  "file_url" text NOT NULL,
+  "mime_type" varchar(255),
+  "file_size" integer,
+  "created_at" timestamp DEFAULT now() NOT NULL
+);
+```
+
+---
+
+## Backend Changes
+
+### 1. File Service — `knoxadmin/src/services/file.service.ts`
+
+Add a new upload function for general documents:
+
+```ts
+export async function saveDocumentFile(
+  deploymentId: string,
+  category: 'rfp' | 'other',
+  file: MultipartFile
+): Promise<{ fileName: string; fileUrl: string; mimeType: string; fileSize: number }> {
+  // Allowed MIME types
+  const allowedMimes = [
+    'application/pdf',
+    'application/msword',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    'application/vnd.ms-excel',
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    'text/csv',
+    'text/plain',
+    'application/zip',
+    'application/x-zip-compressed',
+  ];
+
+  if (!allowedMimes.includes(file.mimetype)) {
+    throw new Error(`File type ${file.mimetype} is not allowed`);
+  }
+
+  const uploadDir = path.join(process.cwd(), 'uploads', 'documents', category, deploymentId);
+  await fs.mkdir(uploadDir, { recursive: true });
+
+  const ext = path.extname(file.filename) || '';
+  const safeName = `${Date.now()}-${uuidv4()}${ext}`;
+  const filePath = path.join(uploadDir, safeName);
+
+  await pipeline(file.file, fsSync.createWriteStream(filePath));
+
+  const stats = await fs.stat(filePath);
+
+  return {
+    fileName: file.filename,   // preserve original name
+    fileUrl: filePath,
+    mimeType: file.mimetype,
+    fileSize: stats.size,
+  };
+}
+
+export async function deleteDocumentFile(fileUrl: string): Promise<void> {
+  try {
+    await fs.unlink(fileUrl);
+  } catch {
+    // ignore missing file
+  }
+}
+```
+
+### 2. Onprem Service — `knoxadmin/src/modules/onprem/onprem.service.ts`
+
+Add CRUD helpers for `onprem_documents`:
+
+```ts
+// Upload one document file and insert DB record
+export async function uploadDocument(
+  deploymentId: string,
+  category: 'rfp' | 'other',
+  file: MultipartFile
+): Promise<OnpremDocument> {
+  const { fileName, fileUrl, mimeType, fileSize } = await saveDocumentFile(deploymentId, category, file);
+  const [doc] = await db.insert(onpremDocuments).values({
+    deploymentId,
+    category,
+    fileName,
+    fileUrl,
+    mimeType,
+    fileSize,
+  }).returning();
+  return doc;
+}
+
+// Get all documents for a deployment (optionally filtered by category)
+export async function getDocuments(
+  deploymentId: string,
+  category?: 'rfp' | 'other'
+): Promise<OnpremDocument[]> {
+  const conditions = [eq(onpremDocuments.deploymentId, deploymentId)];
+  if (category) conditions.push(eq(onpremDocuments.category, category));
+  return db.select().from(onpremDocuments).where(and(...conditions));
+}
+
+// Delete a single document record and its file
+export async function deleteDocument(documentId: string): Promise<void> {
+  const [doc] = await db.select().from(onpremDocuments).where(eq(onpremDocuments.id, documentId));
+  if (!doc) throw new NotFoundError('Document not found');
+  await deleteDocumentFile(doc.fileUrl);
+  await db.delete(onpremDocuments).where(eq(onpremDocuments.id, documentId));
+}
+
+// Build a ZIP buffer containing ALL files for a deployment
+export async function buildDeploymentZip(deploymentId: string): Promise<Buffer> {
+  const deployment = await getDeploymentById(deploymentId);
+  if (!deployment) throw new NotFoundError('Deployment not found');
+
+  const archiver = await import('archiver');
+  const archive = archiver.default('zip', { zlib: { level: 6 } });
+  const chunks: Buffer[] = [];
+
+  archive.on('data', (chunk: Buffer) => chunks.push(chunk));
+
+  // Add prerequisite file
+  if (deployment.prerequisiteFileUrl) {
+    archive.file(deployment.prerequisiteFileUrl, {
+      name: `prerequisite/${deployment.prerequisiteFileName ?? 'prerequisite'}`,
+    });
+  }
+
+  // Add SSL certificate
+  if (deployment.sslCertificateFileUrl) {
+    const sslName = path.basename(deployment.sslCertificateFileUrl);
+    archive.file(deployment.sslCertificateFileUrl, { name: `ssl-certificate/${sslName}` });
+  }
+
+  // Add RFP and other documents
+  const docs = await getDocuments(deploymentId);
+  for (const doc of docs) {
+    const folder = doc.category === 'rfp' ? 'rfp-documents' : 'other-documents';
+    archive.file(doc.fileUrl, { name: `${folder}/${doc.fileName}` });
+  }
+
+  await archive.finalize();
+
+  return new Promise((resolve, reject) => {
+    archive.on('end', () => resolve(Buffer.concat(chunks)));
+    archive.on('error', reject);
+  });
+}
+```
+
+> **Dependency:** Add `archiver` npm package to knoxadmin backend:
+> ```
+> npm install archiver
+> npm install --save-dev @types/archiver
+> ```
+
+### 3. Onprem Controller — `knoxadmin/src/modules/onprem/onprem.controller.ts`
+
+Add four new handlers:
+
+```ts
+// POST /:id/documents?category=rfp|other  (multipart, multiple files)
+export async function uploadDocuments(request, reply) {
+  const { id } = request.params;
+  const { category } = request.query as { category: 'rfp' | 'other' };
+  const parts = request.files();  // async iterator for multiple files
+  const results: OnpremDocument[] = [];
+  for await (const file of parts) {
+    const doc = await uploadDocument(id, category, file);
+    results.push(doc);
+  }
+  return reply.send(results);
+}
+
+// GET /:id/documents?category=rfp|other  (list)
+export async function listDocuments(request, reply) {
+  const { id } = request.params;
+  const { category } = request.query as { category?: 'rfp' | 'other' };
+  const docs = await getDocuments(id, category);
+  return reply.send(docs);
+}
+
+// DELETE /:id/documents/:docId
+export async function removeDocument(request, reply) {
+  const { docId } = request.params;
+  await deleteDocument(docId);
+  return reply.send({ message: 'Document deleted' });
+}
+
+// GET /:id/download-all  → streams ZIP
+export async function downloadAll(request, reply) {
+  const { id } = request.params;
+  const zipBuffer = await buildDeploymentZip(id);
+  const deployment = await getDeploymentById(id);
+  const zipName = `${deployment?.clientName ?? 'deployment'}-files.zip`;
+
+  return reply
+    .header('Content-Type', 'application/zip')
+    .header('Content-Disposition', `attachment; filename="${zipName}"`)
+    .send(zipBuffer);
+}
+```
+
+### 4. Onprem Routes — `knoxadmin/src/modules/onprem/onprem.routes.ts`
+
+Add routes (all behind `authenticate + authorize`):
+
+```ts
+// Multi-file document upload
+app.post('/:id/documents', {
+  preHandler: [authenticate, authorize('onprem', 'update')],
+  config: { isMultipart: true },
+  schema: {
+    tags: ['OnPrem'],
+    summary: 'Upload RFP or other documents',
+    security: [{ bearerAuth: [] }],
+    params: { type: 'object', properties: { id: { type: 'string', format: 'uuid' } } },
+    querystring: {
+      type: 'object',
+      required: ['category'],
+      properties: { category: { type: 'string', enum: ['rfp', 'other'] } },
+    },
+  },
+}, uploadDocuments);
+
+// List documents
+app.get('/:id/documents', {
+  preHandler: [authenticate, authorize('onprem', 'read')],
+  schema: {
+    tags: ['OnPrem'],
+    summary: 'List documents for a deployment',
+    security: [{ bearerAuth: [] }],
+  },
+}, listDocuments);
+
+// Delete a document
+app.delete('/:id/documents/:docId', {
+  preHandler: [authenticate, authorize('onprem', 'update')],
+  schema: {
+    tags: ['OnPrem'],
+    summary: 'Delete a document',
+    security: [{ bearerAuth: [] }],
+  },
+}, removeDocument);
+
+// Download all files as ZIP
+app.get('/:id/download-all', {
+  preHandler: [authenticate, authorize('onprem', 'read')],
+  schema: {
+    tags: ['OnPrem'],
+    summary: 'Download all files as ZIP',
+    security: [{ bearerAuth: [] }],
+  },
+}, downloadAll);
+```
+
+---
+
+## Frontend Changes
+
+### 5. Types — `knoxadmin-client/src/types/onprem.types.ts`
+
+```ts
+export type DocumentCategory = 'rfp' | 'other';
+
+export interface OnpremDocument {
+  id: string;
+  deploymentId: string;
+  category: DocumentCategory;
+  fileName: string;
+  mimeType: string | null;
+  fileSize: number | null;
+  createdAt: string;
+}
+```
+
+Also update the `OnpremDeployment` type to include documents:
+```ts
+export interface OnpremDeployment {
+  // ... existing fields ...
+  documents?: OnpremDocument[];
+}
+```
+
+### 6. API Client — `knoxadmin-client/src/api/onprem.ts`
+
+Add new methods:
+
+```ts
+// Upload multiple documents (one category at a time)
+uploadDocuments: async (deploymentId: string, category: DocumentCategory, files: File[]): Promise<OnpremDocument[]> => {
+  const formData = new FormData();
+  files.forEach((file) => formData.append('files', file));
+  const response = await apiClient.post<OnpremDocument[]>(
+    `/onprem/${deploymentId}/documents?category=${category}`,
+    formData,
+    { headers: { 'Content-Type': 'multipart/form-data' } }
+  );
+  return response.data;
+},
+
+// List documents for a deployment
+listDocuments: async (deploymentId: string, category?: DocumentCategory): Promise<OnpremDocument[]> => {
+  const params = category ? { category } : undefined;
+  const response = await apiClient.get<OnpremDocument[]>(`/onprem/${deploymentId}/documents`, { params });
+  return response.data;
+},
+
+// Delete a document
+deleteDocument: async (deploymentId: string, documentId: string): Promise<void> => {
+  await apiClient.delete(`/onprem/${deploymentId}/documents/${documentId}`);
+},
+
+// Download all files as ZIP
+downloadAll: async (deploymentId: string): Promise<Blob> => {
+  const response = await apiClient.get(`/onprem/${deploymentId}/download-all`, {
+    responseType: 'blob',
+  });
+  return response.data;
+},
+```
+
+### 7. Form Page — `knoxadmin-client/src/pages/onprem/RegisterOnpremPage.tsx`
+
+Add two new file upload sections after the existing SSL Certificate section:
+
+#### State
+
+```ts
+const [rfpFiles, setRfpFiles] = useState<File[]>([]);
+const [otherFiles, setOtherFiles] = useState<File[]>([]);
+const [existingDocuments, setExistingDocuments] = useState<OnpremDocument[]>([]);
+```
+
+Load existing documents when editing (in `useEffect` that loads deployment data):
+```ts
+const docs = await onpremApi.listDocuments(id);
+setExistingDocuments(docs);
+```
+
+#### Upload on Submit
+
+After existing prerequisite and SSL certificate uploads:
+```ts
+if (rfpFiles.length > 0) {
+  await onpremApi.uploadDocuments(deploymentId, 'rfp', rfpFiles);
+}
+if (otherFiles.length > 0) {
+  await onpremApi.uploadDocuments(deploymentId, 'other', otherFiles);
+}
+```
+
+#### JSX — RFP Documents Section
+
+```tsx
+{/* RFP Documents */}
+<div className="space-y-2">
+  <Label>RFP Documents</Label>
+  <p className="text-xs text-muted-foreground">
+    Upload RFP files. Supported formats: PDF, DOC, DOCX, XLS, XLSX, CSV, TXT, ZIP
+  </p>
+
+  {/* Existing RFP documents (edit mode) */}
+  {existingDocuments.filter(d => d.category === 'rfp').map(doc => (
+    <div key={doc.id} className="flex items-center gap-2 text-sm border rounded px-3 py-2">
+      <FileIcon className="h-4 w-4 text-muted-foreground" />
+      <span className="flex-1 truncate">{doc.fileName}</span>
+      {canEdit && (
+        <Button variant="ghost" size="icon" onClick={() => handleDeleteDocument(doc.id)}>
+          <Trash2 className="h-4 w-4 text-destructive" />
+        </Button>
+      )}
+    </div>
+  ))}
+
+  {/* New files queued for upload */}
+  {rfpFiles.map((file, i) => (
+    <div key={i} className="flex items-center gap-2 text-sm border rounded px-3 py-2 bg-muted/40">
+      <FileIcon className="h-4 w-4 text-muted-foreground" />
+      <span className="flex-1 truncate">{file.name}</span>
+      <Button variant="ghost" size="icon" onClick={() => setRfpFiles(f => f.filter((_, j) => j !== i))}>
+        <X className="h-4 w-4" />
+      </Button>
+    </div>
+  ))}
+
+  {canEdit && (
+    <Button variant="outline" size="sm" asChild>
+      <label>
+        <Upload className="h-4 w-4 mr-2" />
+        Add RFP Files
+        <input
+          type="file"
+          className="sr-only"
+          multiple
+          accept=".pdf,.doc,.docx,.xls,.xlsx,.csv,.txt,.zip"
+          onChange={(e) => {
+            const newFiles = Array.from(e.target.files ?? []);
+            setRfpFiles(f => [...f, ...newFiles]);
+            e.target.value = '';
+          }}
+        />
+      </label>
+    </Button>
+  )}
+</div>
+```
+
+#### JSX — Other Documents Section
+
+Identical structure to RFP section but uses `otherFiles` / `category === 'other'` and label "Other Documents".
+
+#### Delete Existing Document Handler
+
+```ts
+const handleDeleteDocument = async (docId: string) => {
+  if (!deploymentId) return;
+  await onpremApi.deleteDocument(deploymentId, docId);
+  setExistingDocuments(docs => docs.filter(d => d.id !== docId));
+};
+```
+
+### 8. Listing Page Download Button — `knoxadmin-client/src/pages/onprem/OnpremListPage.tsx`
+
+Replace current `handleDownload` (which only downloads prerequisite file) with one that calls the new `/download-all` endpoint:
+
+**Current:**
+```ts
+const handleDownload = async (deployment: OnpremListItem) => {
+  if (!deployment.prerequisiteFileUrl) return;
+  const blob = await onpremApi.downloadPrerequisite(deployment.id);
+  // ...trigger download
+};
+```
+
+**New:**
+```ts
+const handleDownload = async (deployment: OnpremListItem) => {
+  const blob = await onpremApi.downloadAll(deployment.id);
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `${deployment.clientName ?? deployment.id}-files.zip`;
+  a.click();
+  URL.revokeObjectURL(url);
+};
+```
+
+### 9. Listing Table — `knoxadmin-client/src/components/onprem/OnpremTable.tsx`
+
+Update the download button:
+- **Always enabled** (even if no prerequisite file — there may be RFP/other docs or SSL cert)
+- Update tooltip: `"Download All Files (ZIP)"` instead of `"Download Prerequisite File"`
+- Remove the conditional disabled/grayed state that checked `prerequisiteFileUrl`
+
+---
+
+## File Size & Type Limits
+
+The backend `saveDocumentFile()` should enforce a file size cap (e.g., 50 MB per file) to prevent abuse:
+
+```ts
+const MAX_FILE_SIZE_BYTES = 50 * 1024 * 1024; // 50 MB
+if (stats.size > MAX_FILE_SIZE_BYTES) {
+  await fs.unlink(filePath);
+  throw new Error('File exceeds maximum allowed size of 50 MB');
+}
+```
+
+---
+
+## Files to Modify / Create
+
+| File | Change |
+|------|--------|
+| `knoxadmin/src/db/schema/onprem.ts` | Add `documentCategoryEnum` + `onpremDocuments` table |
+| `knoxadmin/drizzle/0008_onprem_documents.sql` | New migration file |
+| `knoxadmin/src/services/file.service.ts` | Add `saveDocumentFile()`, `deleteDocumentFile()` |
+| `knoxadmin/src/modules/onprem/onprem.service.ts` | Add `uploadDocument()`, `getDocuments()`, `deleteDocument()`, `buildDeploymentZip()` |
+| `knoxadmin/src/modules/onprem/onprem.controller.ts` | Add `uploadDocuments`, `listDocuments`, `removeDocument`, `downloadAll` handlers |
+| `knoxadmin/src/modules/onprem/onprem.routes.ts` | Register 4 new routes |
+| `knoxadmin-client/src/types/onprem.types.ts` | Add `OnpremDocument`, `DocumentCategory` types |
+| `knoxadmin-client/src/api/onprem.ts` | Add `uploadDocuments`, `listDocuments`, `deleteDocument`, `downloadAll` |
+| `knoxadmin-client/src/pages/onprem/RegisterOnpremPage.tsx` | Add RFP + Other document upload sections |
+| `knoxadmin-client/src/pages/onprem/OnpremListPage.tsx` | Replace `handleDownload` with download-all |
+| `knoxadmin-client/src/components/onprem/OnpremTable.tsx` | Update download button (always enabled, new tooltip) |
+
+### New dependency (backend)
+```
+npm install archiver
+npm install --save-dev @types/archiver
+```
+
+---
+
+## Implementation Order
+
+1. DB schema + migration (`onprem.ts` schema, `0008_onprem_documents.sql`, run migration)
+2. Backend file service (`saveDocumentFile`, `deleteDocumentFile`)
+3. Backend service (`uploadDocument`, `getDocuments`, `deleteDocument`, `buildDeploymentZip`)
+4. Backend controller + routes (4 new handlers + routes)
+5. Frontend types + API client
+6. Frontend form (`RegisterOnpremPage`) — RFP and Other document sections
+7. Frontend listing (`OnpremListPage` + `OnpremTable`) — download-all button
+
+---
+
+## Completion Log
+
+### ✅ Completed on 2026-03-16 (Backend & API Layer)
+
+**Database Layer:**
+- ✅ Added `documentCategoryEnum` ('rfp', 'other') to `/knoxadmin/src/db/schema/onprem.ts`
+- ✅ Created `onpremDocuments` table with proper schema (id, deploymentId, category, fileName, fileUrl, mimeType, fileSize, createdAt)
+- ✅ Added type exports: `OnpremDocument`, `NewOnpremDocument`, `DocumentCategory`
+- ✅ Created migration file `/knoxadmin/drizzle/0008_onprem_documents.sql` with idempotent enum and table creation
+
+**Backend File Service:**
+- ✅ Added `saveDocumentFile()` function to handle multi-file uploads for RFP and other documents
+- ✅ Implemented file type validation (PDF, DOC, DOCX, XLS, XLSX, CSV, TXT, ZIP)
+- ✅ Added 50MB file size limit enforcement with cleanup on violation
+- ✅ Added `deleteDocumentFile()` function for cleanup
+
+**Backend Service Layer:**
+- ✅ Implemented `uploadDocument()` - saves file and creates DB record
+- ✅ Implemented `getDocuments()` - lists documents with optional category filtering
+- ✅ Implemented `deleteDocument()` - deletes record and removes file from disk
+- ✅ Implemented `buildDeploymentZip()` - creates ZIP archive with all deployment files (prerequisites, SSL cert, RFP docs, other docs)
+
+**Backend Controller & Routes:**
+- ✅ Added `uploadDocuments()` handler - POST `/:id/documents?category=rfp|other` (multipart)
+- ✅ Added `listDocuments()` handler - GET `/:id/documents?category=rfp|other`
+- ✅ Added `removeDocument()` handler - DELETE `/:id/documents/:docId`
+- ✅ Added `downloadAll()` handler - GET `/:id/download-all` (streams ZIP)
+- ✅ Registered all 4 routes with proper authentication/authorization
+
+**Frontend Types & API Client:**
+- ✅ Added `DocumentCategory` type ('rfp' | 'other')
+- ✅ Added `OnpremDocument` interface with all fields
+- ✅ Updated `OnpremDeployment` interface to include optional `documents?: OnpremDocument[]`
+- ✅ Implemented `uploadDocuments()` API method
+- ✅ Implemented `listDocuments()` API method
+- ✅ Implemented `deleteDocument()` API method
+- ✅ Implemented `downloadAll()` API method
+
+**Frontend Form & Listing (Completed):**
+- ✅ `RegisterOnpremPage.tsx` - Added RFP Documents and Other Documents upload sections with file management UI
+- ✅ `OnpremListPage.tsx` - Updated download button to use new `/download-all` endpoint
+- ✅ `OnpremTable.tsx` - Updated download button (always enabled, tooltip shows "Download All Files (ZIP)")
+
+**Key Implementation Details:**
+- Files stored at `/uploads/documents/{category}/{deploymentId}/` with UUID-based naming
+- ZIP archive includes all files in organized folders: `prerequisite/`, `ssl-certificate/`, `rfp-documents/`, `other-documents/`
+- File size capped at 50MB per file to prevent abuse
+- Proper cascade delete on deployment removal
+- All routes protected with authentication and OnPrem authorization checks
+
+---
+
+# Implementation Plan: Slack Patch Notifications — Frontend UI & Env Wiring
+
+**STATUS:** ⏳ PENDING
+
+## Overview
+
+The backend Slack notification system is **already fully implemented**:
+- `slack-notification.service.ts` — sends Block Kit messages (🔴🟡🟢 urgency colours)
+- `patch-reminder.service.ts` — queries `nextScheduledPatchDate` within configurable days
+- `scheduler.service.ts` — `node-cron` fires daily at 9 AM; fires on startup in dev
+- `POST /api/notifications/patch-reminders/trigger` — manual fire
+- `GET /api/notifications/patch-reminders/preview?daysAhead=N` — preview without sending
+
+**What this plan adds:**
+1. Wire `SLACK_WEBHOOK_URL` into the Zod env schema so misconfiguration is caught at startup
+2. Frontend Settings tab — "Notifications" — showing upcoming patches + manual trigger button
+
+---
+
+## Fix 1 — Add `SLACK_WEBHOOK_URL` to Env Schema
+
+**File:** `knoxadmin/src/config/env.ts`
+
+```ts
+SLACK_WEBHOOK_URL: z.string().url().optional(),
+```
+
+Make it optional so the app still starts without Slack configured (the service already has a guard that skips if the URL is missing).
+
+---
+
+## Fix 2 — Frontend: Notifications Settings Tab
+
+Add a new "Notifications" tab inside the Settings page (alongside Users, Invites, etc.).
+
+### 2a. API client — `knoxadmin-client/src/api/notifications.ts` (new file)
+
+```ts
+import apiClient from './client';
+
+export interface UpcomingPatch {
+  id: string;
+  clientName: string;
+  nextScheduledPatchDate: string;
+  daysUntilPatch: number;
+  currentVersion: string | null;
+  environmentType: string;
+}
+
+export const notificationsApi = {
+  previewPatchReminders: async (daysAhead = 10): Promise<{ upcomingPatches: UpcomingPatch[]; count: number }> => {
+    const response = await apiClient.get('/notifications/patch-reminders/preview', {
+      params: { daysAhead },
+    });
+    return response.data;
+  },
+
+  triggerPatchReminders: async (): Promise<{ message: string; upcomingPatchesCount: number }> => {
+    const response = await apiClient.post('/notifications/patch-reminders/trigger');
+    return response.data;
+  },
+};
+```
+
+### 2b. Settings page tab — `knoxadmin-client/src/pages/settings/NotificationsTab.tsx` (new file)
+
+**Layout:**
+
+```
+┌─────────────────────────────────────────────────────┐
+│  Slack Notifications                                  │
+│  ─────────────────────────────────────────────────  │
+│  Patch reminders are sent daily at 9:00 AM to the   │
+│  configured Slack channel.                           │
+│                                                      │
+│  [Days ahead: 10 ▼]   [Preview]  [Send Now]          │
+│                                                      │
+│  ┌── Upcoming Patches (next 10 days) ─────────────┐ │
+│  │  🔴 ClientA  |  production  |  v2.1  |  2 days │ │
+│  │  🟡 ClientB  |  staging     |  v2.0  |  5 days │ │
+│  │  🟢 ClientC  |  production  |  v1.9  |  9 days │ │
+│  └────────────────────────────────────────────────┘ │
+└─────────────────────────────────────────────────────┘
+```
+
+**Component logic:**
+
+```tsx
+const NotificationsTab = () => {
+  const [daysAhead, setDaysAhead] = useState(10);
+  const [patches, setPatches] = useState<UpcomingPatch[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [isSending, setIsSending] = useState(false);
+  const [notification, setNotification] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+
+  // Load preview on mount and when daysAhead changes
+  useEffect(() => {
+    fetchPreview();
+  }, [daysAhead]);
+
+  const fetchPreview = async () => {
+    setIsLoading(true);
+    try {
+      const data = await notificationsApi.previewPatchReminders(daysAhead);
+      setPatches(data.upcomingPatches);
+    } catch {
+      // ignore
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleSendNow = async () => {
+    setIsSending(true);
+    try {
+      const result = await notificationsApi.triggerPatchReminders();
+      setNotification({
+        type: 'success',
+        message: result.upcomingPatchesCount > 0
+          ? `Sent Slack notification for ${result.upcomingPatchesCount} upcoming patch(es).`
+          : 'No upcoming patches to notify about.',
+      });
+    } catch (err) {
+      setNotification({ type: 'error', message: 'Failed to send Slack notification.' });
+    } finally {
+      setIsSending(false);
+    }
+  };
+```
+
+**Urgency badge logic:**
+```tsx
+const urgencyLabel = (days: number) => {
+  if (days <= 3) return { label: 'Critical', className: 'bg-red-100 text-red-700' };
+  if (days <= 7) return { label: 'Soon', className: 'bg-yellow-100 text-yellow-700' };
+  return { label: 'Upcoming', className: 'bg-green-100 text-green-700' };
+};
+```
+
+**Table columns:** Client Name | Environment | Current Version | Patch Date | Days Remaining | Urgency badge
+
+### 2c. Wire into Settings page
+
+**File:** `knoxadmin-client/src/pages/settings/SettingsPage.tsx` (or wherever the settings tabs are)
+
+Add "Notifications" tab alongside existing tabs:
+```tsx
+{ id: 'notifications', label: 'Notifications', component: <NotificationsTab /> }
+```
+
+---
+
+## Files to Create / Modify
+
+| File | Change |
+|------|--------|
+| `knoxadmin/src/config/env.ts` | Add `SLACK_WEBHOOK_URL: z.string().url().optional()` |
+| `knoxadmin-client/src/api/notifications.ts` | New file — API client for preview + trigger |
+| `knoxadmin-client/src/pages/settings/NotificationsTab.tsx` | New file — UI tab |
+| `knoxadmin-client/src/pages/settings/SettingsPage.tsx` | Add Notifications tab |
+
+---
+
+## Setup Instructions (for .env)
+
+```env
+# Slack Incoming Webhook URL
+# Create at: https://api.slack.com/apps → Your App → Incoming Webhooks
+SLACK_WEBHOOK_URL=https://hooks.slack.com/services/XXX/YYY/ZZZ
+```
+
+The cron schedule (`0 9 * * *` = 9 AM daily) can be changed in `scheduler.service.ts` if needed.
+
+---
+
+## Completion Log
+
+<!-- Fill in when done -->

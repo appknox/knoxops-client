@@ -15,6 +15,7 @@ export interface UserListItem {
   role: Role;
   status: UserStatus;
   lastLoginAt: string | null;
+  inviteLastSentAt: string | null;
   createdAt: string;
 }
 
@@ -35,7 +36,7 @@ export interface ListUsersParams {
   limit?: number;
   search?: string;
   role?: Role;
-  status?: UserStatus;
+  status?: string;
   sortBy?: 'email' | 'firstName' | 'lastName' | 'createdAt' | 'lastLoginAt';
   sortOrder?: 'asc' | 'desc';
 }

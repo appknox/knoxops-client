@@ -18,6 +18,8 @@ import type {
   UpdateCommentInput,
   CommentListResponse,
   CombinedHistoryResponse,
+  OnpremDocument,
+  DocumentCategory,
 } from '@/types';
 
 export const onpremApi = {
@@ -238,6 +240,48 @@ export const onpremApi = {
     const response = await apiClient.get<CombinedHistoryResponse>(
       `/onprem/${deploymentId}/combined-history`
     );
+    return response.data;
+  },
+
+  // ============================================
+  // DOCUMENT MANAGEMENT
+  // ============================================
+
+  uploadDocuments: async (
+    deploymentId: string,
+    category: DocumentCategory,
+    files: File[]
+  ): Promise<OnpremDocument[]> => {
+    const formData = new FormData();
+    files.forEach((file) => formData.append('files', file));
+    const response = await apiClient.post<OnpremDocument[]>(
+      `/onprem/${deploymentId}/documents?category=${category}`,
+      formData,
+      { headers: { 'Content-Type': 'multipart/form-data' } }
+    );
+    return response.data;
+  },
+
+  listDocuments: async (
+    deploymentId: string,
+    category?: DocumentCategory
+  ): Promise<OnpremDocument[]> => {
+    const params = category ? { category } : undefined;
+    const response = await apiClient.get<OnpremDocument[]>(
+      `/onprem/${deploymentId}/documents`,
+      { params }
+    );
+    return response.data;
+  },
+
+  deleteDocument: async (deploymentId: string, documentId: string): Promise<void> => {
+    await apiClient.delete(`/onprem/${deploymentId}/documents/${documentId}`);
+  },
+
+  downloadAll: async (deploymentId: string): Promise<Blob> => {
+    const response = await apiClient.get(`/onprem/${deploymentId}/download-all`, {
+      responseType: 'blob',
+    });
     return response.data;
   },
 };

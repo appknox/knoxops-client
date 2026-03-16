@@ -1,4 +1,4 @@
-import { History, Pencil, Trash2, Server, Eye, Download, MessageSquare } from 'lucide-react';
+import { History, Pencil, Trash2, Server, Download, MessageSquare } from 'lucide-react';
 import { Pagination } from '@/components/ui';
 import { ClientStatusBadge, EnvironmentTypeBadge } from './OnpremStatusBadge';
 import { usePermissions } from '@/hooks/usePermissions';
@@ -13,7 +13,6 @@ interface OnpremTableProps {
     totalPages: number;
   };
   onPageChange: (page: number) => void;
-  onView: (deployment: OnpremDeployment) => void;
   onEdit: (deployment: OnpremDeployment) => void;
   onDelete: (deployment: OnpremDeployment) => void;
   onViewHistory: (deployment: OnpremDeployment) => void;
@@ -35,7 +34,6 @@ const OnpremTable = ({
   deployments,
   pagination,
   onPageChange,
-  onView,
   onEdit,
   onDelete,
   onViewHistory,
@@ -104,6 +102,30 @@ const OnpremTable = ({
                       <Server className="h-4 w-4 text-primary-600" />
                     </div>
                     <span className="font-medium text-gray-900">{deployment.clientName}</span>
+                    {(() => {
+                      if (!deployment.nextScheduledPatchDate) return null;
+                      const days = Math.ceil(
+                        (new Date(deployment.nextScheduledPatchDate).getTime() - Date.now()) /
+                          (1000 * 60 * 60 * 24)
+                      );
+                      if (days < 0 || days > 10) return null;
+                      const color =
+                        days <= 3 ? 'bg-red-500' : days <= 7 ? 'bg-yellow-400' : 'bg-green-500';
+                      const label =
+                        days === 0
+                          ? 'Patch due today'
+                          : `Patch in ${days} day${days === 1 ? '' : 's'} — ${new Date(deployment.nextScheduledPatchDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`;
+                      return (
+                        <span className="relative group ml-1">
+                          <span
+                            className={`inline-block w-2 h-2 rounded-full ${color} animate-pulse`}
+                          />
+                          <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-max max-w-xs px-2 py-1 rounded bg-gray-900 text-white text-xs opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity z-10 whitespace-nowrap">
+                            {label}
+                          </span>
+                        </span>
+                      );
+                    })()}
                   </div>
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap">
@@ -123,23 +145,11 @@ const OnpremTable = ({
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-right">
                   <div className="flex items-center justify-end gap-2">
-                    <button
-                      onClick={() => onView(deployment)}
-                      className="p-1.5 text-gray-600 hover:bg-gray-100 rounded-lg transition-colors cursor-pointer"
-                      title="View Details"
-                    >
-                      <Eye className="h-4 w-4" />
-                    </button>
                     {onDownload && (
                       <button
                         onClick={() => onDownload(deployment)}
-                        className={`p-1.5 rounded-lg transition-colors ${
-                          deployment.prerequisiteFileUrl
-                            ? 'text-green-600 hover:bg-green-50 cursor-pointer'
-                            : 'text-gray-300 cursor-not-allowed'
-                        }`}
-                        title={deployment.prerequisiteFileUrl ? 'Download Prerequisite File' : 'No prerequisite file uploaded'}
-                        disabled={!deployment.prerequisiteFileUrl}
+                        className="p-1.5 rounded-lg transition-colors text-green-600 hover:bg-green-50 cursor-pointer"
+                        title="Download All Files (ZIP)"
                       >
                         <Download className="h-4 w-4" />
                       </button>

@@ -4,7 +4,7 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { ArrowLeft, Save, User, Mail, Calendar, Shield } from 'lucide-react';
-import { Button, Input, Select, Avatar } from '@/components/ui';
+import { Button, Input, Select, Avatar, ConfirmDialog } from '@/components/ui';
 import { PermissionsMatrix, UserRoleBadge, UserStatusBadge } from '@/components/users';
 import { useUserStore, useAuthStore } from '@/stores';
 import { formatDateTime } from '@/utils/formatters';
@@ -31,6 +31,8 @@ const EditUserPage = () => {
   const { selectedUser, fetchUserById, updateUser, isLoading, error } = useUserStore();
   const [selectedRole, setSelectedRole] = useState<Role>('full_viewer');
   const [hasChanges, setHasChanges] = useState(false);
+  const [showConfirmDialog, setShowConfirmDialog] = useState(false);
+  const [pendingFormData, setPendingFormData] = useState<UpdateUserFormData | null>(null);
 
   const {
     register,
@@ -64,16 +66,25 @@ const EditUserPage = () => {
   const isSelfEdit = currentUser?.id === id;
 
   const onSubmit = async (data: UpdateUserFormData) => {
-    if (!id) return;
+    setPendingFormData(data);
+    setShowConfirmDialog(true);
+  };
+
+  const handleConfirmUpdate = async () => {
+    if (!id || !pendingFormData) return;
 
     try {
       await updateUser(id, {
-        ...data,
+        ...pendingFormData,
         role: selectedRole,
       });
-      navigate('/users');
+      setShowConfirmDialog(false);
+      setPendingFormData(null);
+      navigate('/settings/users');
     } catch {
       // Error handled in store
+      setShowConfirmDialog(false);
+      setPendingFormData(null);
     }
   };
 
@@ -143,14 +154,14 @@ const EditUserPage = () => {
             </div>
             <div className="flex items-center gap-2 mt-3">
               <UserRoleBadge role={selectedUser.role} />
-              <UserStatusBadge isActive={selectedUser.isActive} />
+              <UserStatusBadge status={selectedUser.status} />
             </div>
           </div>
         </div>
       </div>
 
       {/* Form */}
-      <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
+      <form id="edit-user-form" onSubmit={handleSubmit(onSubmit)} className="space-y-6">
         {/* Basic Info */}
         <div className="bg-white rounded-xl border border-gray-200 p-6">
           <h3 className="text-lg font-semibold text-gray-900 mb-4">Basic Information</h3>
@@ -182,7 +193,7 @@ const EditUserPage = () => {
             <div>
               <Select
                 label="System-wide Role"
-                value={selectedRole}
+                value={selectedRole === 'admin' ? 'admin' : 'full_viewer'}
                 onChange={(e) => setSelectedRole(e.target.value as Role)}
                 options={roleOptions}
                 disabled={isSelfEdit}
@@ -248,7 +259,7 @@ const EditUserPage = () => {
             </Button>
             <Button
               type="submit"
-              onClick={handleSubmit(onSubmit)}
+              form="edit-user-form"
               disabled={!hasChanges || isLoading}
             >
               <Save className="h-4 w-4 mr-2" />
@@ -257,6 +268,22 @@ const EditUserPage = () => {
           </div>
         </div>
       </div>
+
+      {/* Confirmation Dialog */}
+      <ConfirmDialog
+        isOpen={showConfirmDialog}
+        onClose={() => {
+          setShowConfirmDialog(false);
+          setPendingFormData(null);
+        }}
+        onConfirm={handleConfirmUpdate}
+        title="Confirm Changes"
+        message={`Are you sure you want to update permissions for ${selectedUser?.firstName} ${selectedUser?.lastName}?`}
+        confirmLabel="Update"
+        cancelLabel="Cancel"
+        variant="warning"
+        isLoading={isLoading}
+      />
     </div>
   );
 };

@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, Save, Download, AlertCircle } from 'lucide-react';
+import { ArrowLeft, Save, Download, AlertCircle, Upload, Trash2, File } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { Button, Input, Select, Textarea, Card, CardHeader, CardBody, UserSearchCombobox } from '@/components/ui';
 import { useOnpremStore } from '@/stores';
@@ -14,6 +14,7 @@ import type {
   HypervisorType,
   LanSpeed,
   WifiStandard,
+  OnpremDocument,
 } from '@/types';
 
 // Options for select fields
@@ -397,6 +398,8 @@ const RegisterOnpremPage = () => {
   const [existingDeployment, setExistingDeployment] = useState<OnpremDeployment | null>(null);
   const [prerequisiteFile, setPrerequisiteFile] = useState<File | null>(null);
   const [sslCertificateFile, setSslCertificateFile] = useState<File | null>(null);
+  const [documentFiles, setDocumentFiles] = useState<File[]>([]);
+  const [existingDocuments, setExistingDocuments] = useState<OnpremDocument[]>([]);
   const [uploadingFile, setUploadingFile] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
@@ -457,6 +460,9 @@ const RegisterOnpremPage = () => {
           useSameEmailForLicense: useSameEmail,
           notes: deployment.notes || '',
         });
+
+        // Load existing documents
+        onpremApi.listDocuments(id).then(setExistingDocuments).catch(() => setExistingDocuments([]));
       });
     }
   }, [isEditMode, id]);
@@ -1060,10 +1066,24 @@ const RegisterOnpremPage = () => {
         setUploadingFile(false);
       }
 
+      // Upload documents if any
+      if (documentFiles.length > 0) {
+        setUploadingFile(true);
+        try {
+          await onpremApi.uploadDocuments(deploymentId, 'rfp', documentFiles);
+          setDocumentFiles([]);
+        } catch (error) {
+          console.error('Failed to upload documents:', error);
+        }
+        setUploadingFile(false);
+      }
+
       // Refresh deployment data after file uploads to show download buttons
-      if (isEditMode && (prerequisiteFile || sslCertificateFile)) {
+      if (isEditMode && (prerequisiteFile || sslCertificateFile || documentFiles.length > 0)) {
         const updatedDeployment = await onpremApi.getById(deploymentId);
         setExistingDeployment(updatedDeployment);
+        // Reload documents after upload
+        onpremApi.listDocuments(deploymentId).then(setExistingDocuments).catch(() => {});
       }
 
       // Only navigate away if we're creating a new deployment
@@ -1119,6 +1139,16 @@ const RegisterOnpremPage = () => {
       URL.revokeObjectURL(url);
     } catch (error) {
       console.error('Failed to download SSL certificate:', error);
+    }
+  };
+
+  const handleDeleteDocument = async (documentId: string) => {
+    if (!id) return;
+    try {
+      await onpremApi.deleteDocument(id, documentId);
+      setExistingDocuments((docs) => docs.filter((d) => d.id !== documentId));
+    } catch (error) {
+      console.error('Failed to delete document:', error);
     }
   };
 
@@ -1697,6 +1727,74 @@ const RegisterOnpremPage = () => {
                   )}
                 </div>
               </div>
+            </div>
+          </CardBody>
+        </Card>
+
+        {/* Documents */}
+        <Card>
+          <CardHeader>
+            <h2 className="text-lg font-semibold text-gray-900">Documents</h2>
+          </CardHeader>
+          <CardBody>
+            <div className="space-y-3">
+              <p className="text-sm text-gray-600">
+                Upload RFPs, proposals, and any other relevant files (PDF, DOC, DOCX, XLS, XLSX, CSV, TXT, ZIP)
+              </p>
+
+              {/* Existing uploaded documents */}
+              {existingDocuments.map((doc) => (
+                <div key={doc.id} className="flex items-center gap-2 text-sm border rounded px-3 py-2 bg-gray-50">
+                  <File className="h-4 w-4 text-gray-500" />
+                  <span className="flex-1 truncate">{doc.fileName}</span>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => handleDeleteDocument(doc.id)}
+                  >
+                    <Trash2 className="h-4 w-4 text-red-600" />
+                  </Button>
+                </div>
+              ))}
+
+              {/* New queued files */}
+              {documentFiles.map((file, i) => (
+                <div
+                  key={i}
+                  className="flex items-center gap-2 text-sm border rounded px-3 py-2 bg-blue-50"
+                >
+                  <File className="h-4 w-4 text-blue-600" />
+                  <span className="flex-1 truncate">{file.name}</span>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setDocumentFiles((f) => f.filter((_, j) => j !== i))}
+                  >
+                    <Trash2 className="h-4 w-4 text-red-600" />
+                  </Button>
+                </div>
+              ))}
+
+              {/* Add files button */}
+              <Button type="button" variant="outline" size="sm" asChild>
+                <label>
+                  <Upload className="h-4 w-4 mr-2" />
+                  Add Files
+                  <input
+                    type="file"
+                    className="sr-only"
+                    multiple
+                    accept=".pdf,.doc,.docx,.xls,.xlsx,.csv,.txt,.zip"
+                    onChange={(e) => {
+                      const newFiles = Array.from(e.target.files ?? []);
+                      setDocumentFiles((f) => [...f, ...newFiles]);
+                      e.target.value = '';
+                    }}
+                  />
+                </label>
+              </Button>
             </div>
           </CardBody>
         </Card>

@@ -27,29 +27,23 @@ const OnpremListPage = () => {
     fetchDeployments();
   }, [fetchDeployments]);
 
-  const handleView = (deployment: OnpremDeployment) => {
-    navigate(`/onprem/${deployment.id}`);
-  };
-
   const handleEdit = (deployment: OnpremDeployment) => {
     navigate(`/onprem/${deployment.id}/edit`);
   };
 
   const handleDownload = async (deployment: OnpremDeployment) => {
-    if (!deployment.prerequisiteFileUrl) return;
-
     try {
-      const blob = await onpremApi.downloadPrerequisite(deployment.id);
+      const blob = await onpremApi.downloadAll(deployment.id);
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = deployment.prerequisiteFileName || 'prerequisite.xlsx';
+      a.download = `${deployment.clientName ?? deployment.id}-files.zip`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
     } catch (error) {
-      console.error('Failed to download file:', error);
+      console.error('Failed to download files:', error);
     }
   };
 
@@ -81,7 +75,6 @@ const OnpremListPage = () => {
         deployments={deployments}
         pagination={pagination}
         onPageChange={setPage}
-        onView={handleView}
         onEdit={handleEdit}
         onDelete={setDeleteDeployment}
         onViewHistory={setHistoryDeployment}
