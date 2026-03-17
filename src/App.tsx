@@ -3,8 +3,8 @@ import { AppLayout } from '@/components/layout';
 import { LoginPage, AcceptInvitePage, AuthCallback, AuthError } from '@/pages/auth';
 import { DeviceListPage, RegisterDevicePage } from '@/pages/devices';
 import { UserListPage, AddUserPage, EditUserPage } from '@/pages/users';
-import { SettingsPage, InvitesTab, NotificationsTab } from '@/pages/settings';
-import { OnpremListPage, RegisterOnpremPage } from '@/pages/onprem';
+import { SettingsPage, InvitesTab } from '@/pages/settings';
+import { OnpremPage, OnpremClientsTab, NotificationsTab, ReleasesTab, RegisterOnpremPage } from '@/pages/onprem';
 import { ProfilePage } from '@/pages/profile';
 
 function App() {
@@ -33,14 +33,17 @@ function App() {
             <Route path="users/add" element={<AddUserPage />} />
             <Route path="users/:id/edit" element={<EditUserPage />} />
             <Route path="invites" element={<InvitesTab />} />
-            <Route path="notifications" element={<NotificationsTab />} />
           </Route>
 
-          {/* On-Prem management routes (specific routes before generic) */}
-          <Route path="/onprem" element={<OnpremListPage />} />
+          {/* On-Prem management routes with nested layout */}
+          <Route path="/onprem" element={<OnpremPage />}>
+            <Route index element={<Navigate to="/onprem/clients" replace />} />
+            <Route path="clients" element={<OnpremClientsTab />} />
+            <Route path="releases" element={<ReleasesTab />} />
+            <Route path="notifications" element={<NotificationsTab />} />
+          </Route>
           <Route path="/onprem/register" element={<RegisterOnpremPage />} />
           <Route path="/onprem/:id/edit" element={<RegisterOnpremPage />} />
-          <Route path="/onprem/:id" element={<OnpremListPage />} />
 
           {/* Profile route (all authenticated users) */}
           <Route path="/profile" element={<ProfilePage />} />

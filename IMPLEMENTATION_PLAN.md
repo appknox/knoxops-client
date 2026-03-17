@@ -3708,7 +3708,7 @@ The Re-invite for Expired and Deleted Users feature has been fully implemented, 
 
 # Implementation Plan: User Management UI Fixes
 
-**STATUS:** ✅ COMPLETED
+**STATUS:** ✅ COMPLETED (2026-03-17)
 
 ## Overview
 
@@ -4040,7 +4040,7 @@ All four UI fixes for user management have been fully implemented:
 
 # Implementation Plan: RFP & Other Document Uploads + Download All as ZIP
 
-**STATUS:** ✅ COMPLETED
+**STATUS:** ✅ COMPLETED (2026-03-17)
 
 ## Overview
 
@@ -5718,7 +5718,7 @@ triggerForDeployment: async (deploymentId: string): Promise<{ message: string }>
 
 # Implementation Plan: Overdue Patch Alerts + CSM in Slack Notifications
 
-**STATUS:** ✅ COMPLETED
+**STATUS:** ✅ COMPLETED (2026-03-17)
 
 ## Overview
 
@@ -5920,4 +5920,770 @@ Already fetches from `onpremDeployments` — add the same `leftJoin(users, ...)`
 
 **Completed on 2026-03-17:**
 - ✅ Part 1 (Overdue Patch Handling): Frontend changes to OnpremTable.tsx and PatchAlertModal.tsx with dynamic visual indicators and titles for overdue/due-today/upcoming states; backend changes to patch-reminder.service.ts with 30-day lookback for overdue patches
+
+---
+
+# Plan: Move Notifications to On-Prem Page (Two Tabs)
+
+**STATUS:** ✅ COMPLETED (2026-03-17)
+
+## Overview
+
+Move the "Notifications" tab from the Settings page into the On-Prem page. The On-Prem page becomes a tabbed layout with two tabs:
+
+- **Clients** — existing deployment listing (filters, table, modals)
+- **Notifications** — patch reminders preview + manual send (currently at `/settings/notifications`)
+
+Route structure after the change:
+- `/onprem` → redirect to `/onprem/clients`
+- `/onprem/clients` → clients tab (existing `OnpremListPage` content)
+- `/onprem/notifications` → notifications tab (moved from `/settings/notifications`)
+- `/onprem/register` → RegisterOnpremPage (unchanged, sibling route)
+- `/onprem/:id/edit` → RegisterOnpremPage (unchanged, sibling route)
+- `/settings/notifications` → removed
+
+---
+
+## Files to Create
+
+| File | Purpose |
+|------|---------|
+| `src/pages/onprem/OnpremPage.tsx` | New layout: tab bar + `<Outlet />` (mirrors `SettingsPage` pattern) |
+| `src/pages/onprem/OnpremClientsTab.tsx` | Current `OnpremListPage.tsx` content moved here |
+
+## Files to Move
+
+| From | To |
+|------|----|
+| `src/pages/settings/NotificationsTab.tsx` | `src/pages/onprem/NotificationsTab.tsx` |
+
+## Files to Modify
+
+| File | Change |
+|------|---------|
+| `src/App.tsx` | Restructure onprem routes to nested layout; remove `/settings/notifications`; update imports |
+| `src/pages/onprem/index.ts` | Export `OnpremPage`, `OnpremClientsTab`, `NotificationsTab`; keep `RegisterOnpremPage` |
+| `src/pages/settings/index.ts` | Remove `NotificationsTab` export |
+| `src/pages/settings/SettingsPage.tsx` | Remove "Notifications" entry from `tabs` array |
+
+## Files to Delete
+
+| File | Reason |
+|------|---------|
+| `src/pages/onprem/OnpremListPage.tsx` | Content extracted to `OnpremClientsTab.tsx`; layout promoted to `OnpremPage.tsx` |
+| `src/pages/settings/NotificationsTab.tsx` | Moved to `src/pages/onprem/` |
+
+---
+
+## Step 1 — Create `OnpremPage.tsx` (layout with tabs)
+
+```tsx
+// src/pages/onprem/OnpremPage.tsx
+import { NavLink, Outlet, Navigate, useLocation } from 'react-router-dom';
+
+const tabs = [
+  { path: '/onprem/clients', label: 'Clients' },
+  { path: '/onprem/notifications', label: 'Notifications' },
+];
+
+const OnpremPage = () => {
+  const { pathname } = useLocation();
+
+  // Redirect /onprem exactly to /onprem/clients
+  if (pathname === '/onprem') {
+    return <Navigate to="/onprem/clients" replace />;
+  }
+
+  return (
+    <div>
+      <div className="mb-6">
+        <h1 className="text-2xl font-bold text-gray-900">On-Prem Client Management</h1>
+        <p className="text-gray-500 mt-1">
+          Monitor and manage on-premise deployments across all clients.
+        </p>
+      </div>
+      <div className="border-b border-gray-200 mb-6">
+        <nav className="flex gap-4">
+          {tabs.map((tab) => (
+            <NavLink
+              key={tab.path}
+              to={tab.path}
+              className={({ isActive }) =>
+                `pb-3 text-sm font-medium border-b-2 transition-colors ${
+                  isActive
+                    ? 'border-primary-600 text-primary-600'
+                    : 'border-transparent text-gray-500 hover:text-gray-700'
+                }`
+              }
+            >
+              {tab.label}
+            </NavLink>
+          ))}
+        </nav>
+      </div>
+      <Outlet />
+    </div>
+  );
+};
+
+export { OnpremPage };
+```
+
+---
+
+## Step 2 — Create `OnpremClientsTab.tsx`
+
+Move all content from `OnpremListPage.tsx` here — remove the outer `<div>` header block (h1 + description + Register button placement) since those move to `OnpremPage`. The Register button can stay in the tab or move up — keep it in the tab for simplicity.
+
+Essentially: copy `OnpremListPage.tsx` → rename export to `OnpremClientsTab`.
+
+---
+
+## Step 3 — Move `NotificationsTab.tsx`
+
+Copy `src/pages/settings/NotificationsTab.tsx` → `src/pages/onprem/NotificationsTab.tsx` (no code changes needed — the component is self-contained and imports from `@/api` which is unaffected by location).
+
+---
+
+## Step 4 — Update `App.tsx`
+
+**Before (onprem routes):**
+```tsx
+<Route path="/onprem" element={<OnpremListPage />} />
+<Route path="/onprem/register" element={<RegisterOnpremPage />} />
+<Route path="/onprem/:id/edit" element={<RegisterOnpremPage />} />
+<Route path="/onprem/:id" element={<OnpremListPage />} />
+```
+
+**After:**
+```tsx
+<Route path="/onprem" element={<OnpremPage />}>
+  <Route index element={<Navigate to="/onprem/clients" replace />} />
+  <Route path="clients" element={<OnpremClientsTab />} />
+  <Route path="notifications" element={<NotificationsTab />} />
+</Route>
+<Route path="/onprem/register" element={<RegisterOnpremPage />} />
+<Route path="/onprem/:id/edit" element={<RegisterOnpremPage />} />
+```
+
+Note: The `/onprem/:id` catch-all is removed (it was unused).
+
+**Remove from settings routes:**
+```tsx
+<Route path="notifications" element={<NotificationsTab />} />  // ← remove
+```
+
+**Update imports:**
+```tsx
+// Remove:
+import { SettingsPage, InvitesTab, NotificationsTab } from '@/pages/settings';
+import { OnpremListPage, RegisterOnpremPage } from '@/pages/onprem';
+
+// Add:
+import { SettingsPage, InvitesTab } from '@/pages/settings';
+import { OnpremPage, OnpremClientsTab, NotificationsTab, RegisterOnpremPage } from '@/pages/onprem';
+```
+
+---
+
+## Step 5 — Update `SettingsPage.tsx`
+
+Remove "Notifications" from the tabs array:
+```ts
+const tabs = [
+  { path: '/settings/users', label: 'Users' },
+  { path: '/settings/invites', label: 'Pending Invites' },
+  // { path: '/settings/notifications', label: 'Notifications' },  ← remove
+];
+```
+
+---
+
+## Step 6 — Update index files
+
+**`src/pages/onprem/index.ts`:**
+```ts
+export { OnpremPage } from './OnpremPage';
+export { OnpremClientsTab } from './OnpremClientsTab';
+export { NotificationsTab } from './NotificationsTab';
+export { RegisterOnpremPage } from './RegisterOnpremPage';
+```
+
+**`src/pages/settings/index.ts`:**
+```ts
+export { SettingsPage } from './SettingsPage';
+export { InvitesTab } from './InvitesTab';
+// NotificationsTab removed — now in @/pages/onprem
+```
+
+---
+
+## Completion Log
+
+**Completed on 2026-03-17:**
+- ✅ Created `src/pages/onprem/OnpremPage.tsx` - layout component with two tabs (Clients, Notifications) using NavLink and Outlet
+- ✅ Created `src/pages/onprem/OnpremClientsTab.tsx` - extracted from OnpremListPage, contains all deployment listing logic
+- ✅ Created `src/pages/onprem/NotificationsTab.tsx` - moved from settings/NotificationsTab.tsx, unchanged functionality
+- ✅ Updated `src/App.tsx` - restructured routes: OnpremPage as parent with nested clients/notifications routes; removed /settings/notifications route; removed /onprem/:id catch-all; updated imports
+- ✅ Updated `src/pages/onprem/index.ts` - added exports for OnpremPage, OnpremClientsTab, NotificationsTab; kept OnpremListPage export for backward compatibility
+- ✅ Updated `src/pages/settings/index.ts` - removed NotificationsTab export
+- ✅ Updated `src/pages/settings/SettingsPage.tsx` - removed Notifications tab from tabs array
+
+---
+
 - ✅ Part 2 (CSM in Slack Alerts): Added csmName to PatchNotification interface, updated slack-notification.service.ts with type parameter ('overdue' | 'upcoming'), different headers and formatting based on patch type, included CSM name in Slack Block Kit message formatting, updated sendDeploymentPatchReminder() to join users and include CSM, split checkAndNotifyUpcomingPatches() to handle overdue and upcoming patches separately
+
+---
+
+# Plan: On-Prem Releases Page
+
+**STATUS:** ✅ COMPLETED (2026-03-17)
+
+## Overview
+
+Add a **Releases** tab to the On-Prem section that lists all GitHub releases from the product's private repository. Users with `read` permission on `OnPrem` can view releases and download release assets. The backend proxies all GitHub API calls and downloads so the GitHub PAT is never exposed to the browser.
+
+Final tab structure for the On-Prem page: **Clients | Releases | Notifications**
+
+---
+
+## How It Works (Architecture)
+
+```
+Browser → knoxadmin backend → GitHub REST API (private repo)
+                           → GitHub asset download (proxied stream)
+```
+
+1. Backend stores a GitHub PAT in `.env` — only the server ever uses it.
+2. `GET /api/releases` — backend calls GitHub's releases API, strips sensitive fields, returns clean JSON to frontend.
+3. `GET /api/releases/:releaseId/assets/:assetId/download` — backend streams the asset bytes directly to the client. No pre-signed URLs; no token leakage.
+4. Releases list is cached in-memory for **5 minutes** to respect GitHub's rate limit (5,000 req/hour per PAT).
+
+---
+
+## GitHub API Notes
+
+- **List releases:** `GET https://api.github.com/repos/{owner}/{repo}/releases`
+  - Returns: `id`, `tag_name`, `name`, `body` (Markdown), `published_at`, `draft`, `prerelease`, `assets[]`
+  - Assets fields used: `id`, `name`, `size`, `content_type`
+- **Download asset (private repo):** `GET https://api.github.com/repos/{owner}/{repo}/releases/assets/{asset_id}`
+  - Headers: `Authorization: Bearer {token}`, `Accept: application/octet-stream`
+  - GitHub responds with a redirect (302) to a signed S3 URL — Node's `fetch` follows it automatically with `redirect: 'follow'`
+- **PAT permissions needed:** Fine-grained token → "Contents: Read" + "Metadata: Read"
+
+---
+
+## New Environment Variables
+
+| Variable | Description |
+|----------|-------------|
+| `GITHUB_TOKEN` | Fine-grained PAT (Contents + Metadata: Read) |
+| `GITHUB_OWNER` | GitHub org or username |
+| `GITHUB_REPO` | Repository name |
+
+All optional in Zod schema — app starts without them; releases endpoints return 503 if unconfigured.
+
+---
+
+## Backend Files
+
+### New: `src/services/github.service.ts`
+
+```ts
+interface ReleaseAsset {
+  id: number;
+  name: string;
+  size: number;
+  contentType: string;
+}
+
+export interface GitHubRelease {
+  id: number;
+  tagName: string;
+  name: string;
+  body: string;          // Markdown release notes
+  publishedAt: string;
+  draft: boolean;
+  prerelease: boolean;
+  assets: ReleaseAsset[];
+}
+
+// In-memory cache expires after 5 minutes
+let cache: { data: GitHubRelease[]; expiresAt: number } | null = null;
+
+export async function listReleases(): Promise<GitHubRelease[]>
+// Checks cache, fetches from GitHub if stale, maps response, filters drafts
+
+export async function streamAsset(
+  releaseId: number,
+  assetId: number
+): Promise<{ stream: ReadableStream; contentType: string; filename: string }>
+// Fetches asset from GitHub API with octet-stream Accept header, follows redirect to S3
+```
+
+### New: `src/modules/releases/releases.routes.ts`
+
+Two routes, both require `authenticate` + `authorize('read', 'OnPrem')`:
+- `GET /` — list releases
+- `GET /:releaseId/assets/:assetId/download` — proxy download
+
+### New: `src/modules/releases/releases.controller.ts`
+
+- `listReleasesHandler` — calls `listReleases()`, returns `{ data: GitHubRelease[] }`
+- `downloadAssetHandler` — calls `streamAsset()`, sets `Content-Disposition: attachment; filename="..."` and `Content-Type`, pipes stream to `reply.raw`
+
+### Update: `src/app.ts`
+
+```ts
+import { releasesRoutes } from './modules/releases/releases.routes.js';
+await app.register(releasesRoutes, { prefix: '/api/releases' });
+```
+
+### Update: `src/config/env.ts`
+
+```ts
+GITHUB_TOKEN: z.string().min(1).optional(),
+GITHUB_OWNER: z.string().min(1).optional(),
+GITHUB_REPO:  z.string().min(1).optional(),
+```
+
+---
+
+## Frontend Files
+
+### New: `src/api/releases.ts`
+
+```ts
+export interface ReleaseAsset { id: number; name: string; size: number; contentType: string; }
+export interface GitHubRelease { id: number; tagName: string; name: string; body: string; publishedAt: string; draft: boolean; prerelease: boolean; assets: ReleaseAsset[]; }
+
+export const releasesApi = {
+  list: (): Promise<{ data: GitHubRelease[] }> => apiClient.get('/releases'),
+};
+
+// Download helper — same fetch+blob pattern as handleDownload in OnpremClientsTab
+export async function downloadReleaseAsset(releaseId: number, assetId: number, filename: string): Promise<void>
+```
+
+### New: `src/pages/onprem/ReleasesTab.tsx`
+
+Each release rendered as a card:
+
+```
+┌─────────────────────────────────────────────────────┐
+│  v1.4.0  Appknox 1.4.0 Release    Jan 15, 2026  ● Latest │
+├─────────────────────────────────────────────────────┤
+│  - Fixed XYZ bug                                    │
+│  - Added ABC feature                          [+]   │
+├─────────────────────────────────────────────────────┤
+│  📦 appknox-1.4.0.tar.gz   245 MB   [↓ Download]   │
+│  📦 appknox-1.4.0-sha256.txt  1 KB  [↓ Download]   │
+└─────────────────────────────────────────────────────┘
+```
+
+- Release notes truncated to 3 lines with "Show more" toggle (no Markdown renderer needed — plain `<pre>` or `whitespace-pre-wrap`)
+- File size formatted with KB/MB helper
+- Download button triggers `downloadReleaseAsset()` (same fetch+blob+anchor pattern)
+- Pre-release badge in orange; Latest (first non-prerelease) badge in green
+- Empty state: "Releases not configured" if GitHub env vars missing (503 from API)
+
+### Update: `src/pages/onprem/OnpremPage.tsx`
+
+```ts
+const tabs = [
+  { path: '/onprem/clients', label: 'Clients' },
+  { path: '/onprem/releases', label: 'Releases' },
+  { path: '/onprem/notifications', label: 'Notifications' },
+];
+```
+
+### Update: `src/App.tsx`
+
+Add inside the `<OnpremPage>` nested routes:
+```tsx
+<Route path="releases" element={<ReleasesTab />} />
+```
+
+### Update: `src/pages/onprem/index.ts`
+
+```ts
+export { ReleasesTab } from './ReleasesTab';
+```
+
+---
+
+## Files Summary
+
+| Action | File |
+|--------|------|
+| **Create** | `knoxadmin/src/services/github.service.ts` |
+| **Create** | `knoxadmin/src/modules/releases/releases.routes.ts` |
+| **Create** | `knoxadmin/src/modules/releases/releases.controller.ts` |
+| **Create** | `knoxadmin-client/src/api/releases.ts` |
+| **Create** | `knoxadmin-client/src/pages/onprem/ReleasesTab.tsx` |
+| **Update** | `knoxadmin/src/app.ts` |
+| **Update** | `knoxadmin/src/config/env.ts` |
+| **Update** | `knoxadmin/.env` |
+| **Update** | `knoxadmin-client/src/pages/onprem/OnpremPage.tsx` |
+| **Update** | `knoxadmin-client/src/App.tsx` |
+| **Update** | `knoxadmin-client/src/pages/onprem/index.ts` |
+
+---
+
+## One-Time Setup (You)
+
+1. Create a **GitHub Fine-Grained PAT**:
+   - GitHub → Settings → Developer settings → Personal access tokens → Fine-grained tokens
+   - Resource owner: your org
+   - Repository access: select the private repo
+   - Permissions: **Contents: Read-only** + **Metadata: Read-only**
+2. Add to `knoxadmin/.env`:
+   ```
+   GITHUB_TOKEN=github_pat_xxxxx
+   GITHUB_OWNER=appknox
+   GITHUB_REPO=your-repo-name
+   ```
+3. Ensure the repo uses **GitHub Releases** (not just tags) — the API only returns releases, not bare tags.
+
+---
+
+## Completion Log
+
+**Completed on 2026-03-17:**
+- ✅ Created `knoxadmin/src/services/github.service.ts` - GitHub API integration with 5-minute caching, list releases + stream asset download
+- ✅ Created `knoxadmin/src/modules/releases/releases.controller.ts` - Route handlers for list and download endpoints
+- ✅ Created `knoxadmin/src/modules/releases/releases.routes.ts` - Fastify routes with auth + 'read' OnPrem permission checks
+- ✅ Updated `knoxadmin/src/config/env.ts` - Added GITHUB_TOKEN, GITHUB_OWNER, GITHUB_REPO optional variables
+- ✅ Updated `knoxadmin/src/app.ts` - Imported and registered releases routes at /api/releases prefix
+- ✅ Created `knoxadmin-client/src/api/releases.ts` - API client with list() method and downloadReleaseAsset() helper
+- ✅ Created `knoxadmin-client/src/pages/onprem/ReleasesTab.tsx` - Release card UI with expandable notes, assets table, download buttons; pre-release and latest badges
+- ✅ Updated `knoxadmin-client/src/pages/onprem/OnpremPage.tsx` - Added Releases tab to tabs array between Clients and Notifications
+- ✅ Updated `knoxadmin-client/src/App.tsx` - Added releases route inside OnpremPage nested routes; imported ReleasesTab
+- ✅ Updated `knoxadmin-client/src/pages/onprem/index.ts` - Exported ReleasesTab
+---
+
+# Plan: Share Release with Client
+
+**STATUS:** ✅ COMPLETED (2026-03-17)
+
+## Overview
+
+Replace the download button on each release asset with a **"Share with Client"** button. Clicking it opens a modal where the user can search for an onprem client and send an email to that client's registered contact email. The email contains release details and a time-limited download link (7 days) that is publicly accessible — no login required for the client to download.
+
+---
+
+## How It Works
+
+```
+1. User clicks Share on a release asset
+2. Modal opens → user searches + selects a client
+3. Click "Send Email"
+4. Backend:
+   a. Fetches client contact email from onprem_deployments
+   b. Signs a download JWT (releaseId + assetType + 7d expiry)
+   c. Builds public URL: APP_URL/api/releases/download?token=xxx
+   d. Sends HTML email via existing SMTP (email.service.ts)
+5. Client receives email with "Download" button → clicks → backend validates token + streams file
+```
+
+---
+
+## Backend
+
+### New endpoint 1: `POST /api/releases/:releaseId/share`
+
+- Auth: `authenticate + authorize('read', 'OnPrem')`
+- Body: `{ deploymentId: string, assetType: 'zipball' | 'asset', assetId?: number, assetName: string }`
+- Steps:
+  1. Fetch deployment by `deploymentId` → get `clientName`, `contactEmail`
+  2. Throw 400 if `contactEmail` is null
+  3. Fetch release from GitHub cache → get `tagName`, `name`, `body`
+  4. Sign: `app.jwt.sign({ releaseId, assetType, assetId }, { expiresIn: '7d' })`
+  5. Build: `${env.APP_URL}/api/releases/download?token={token}`
+  6. Call `sendReleaseEmail()` with all details
+  7. Return `{ message: 'Email sent to {contactEmail}' }`
+
+### New endpoint 2: `GET /api/releases/download` (public — no auth middleware)
+
+- Query: `?token=xxx`
+- Verify JWT → extract `{ releaseId, assetType, assetId }`
+- `assetType === 'zipball'` → `streamZipball(releaseId)`
+- `assetType === 'asset'` → `streamAsset(releaseId, assetId)`
+- Stream with `Content-Disposition: attachment`
+- **Must be registered BEFORE the authenticated routes in `releasesRoutes`**
+
+### New: `sendReleaseEmail()` in `email.service.ts`
+
+```ts
+export async function sendReleaseEmail(options: {
+  toEmail: string;
+  clientName: string;
+  tagName: string;
+  releaseName: string;
+  releaseBody: string;
+  assetName: string;
+  downloadUrl: string;
+}): Promise<void>
+```
+
+- Subject: `New Release Available: {tagName}`
+- HTML: client name, version badge, release name, first 500 chars of release notes, "Download {assetName}" button, expiry note
+
+### Update `releases.routes.ts`
+
+```ts
+// 1. Public download (no preHandler) — FIRST
+app.get('/download', downloadTokenHandler);
+
+// 2. Authenticated share
+app.post('/:releaseId/share', { preHandler: [authenticate, authorize('read', 'OnPrem')] }, shareReleaseHandler);
+```
+
+### Update `releases.controller.ts`
+
+Add `shareReleaseHandler` and `downloadTokenHandler`.
+
+---
+
+## Frontend
+
+### Update `ReleasesTab.tsx`
+
+- Remove `downloadReleaseAsset` / `downloadReleaseZipball` imports and calls
+- Replace download buttons with Share buttons (`Share2` icon)
+- Add state:
+  ```ts
+  const [shareTarget, setShareTarget] = useState<{
+    release: GitHubRelease;
+    assetType: 'zipball' | 'asset';
+    assetId?: number;
+    assetName: string;
+  } | null>(null);
+  const [sentNotification, setSentNotification] = useState<string | null>(null);
+  ```
+- Add `ShareReleaseModal` at bottom of JSX
+- Add inline success banner when `sentNotification` is set (auto-dismiss 4s)
+
+### New `ShareReleaseModal.tsx`
+
+Location: `src/components/onprem/ShareReleaseModal.tsx`
+
+```
+┌────────────────────────────────────────────┐
+│  Share Release                        [×]  │
+│  appknox-v1.4.0-source.zip                │
+├────────────────────────────────────────────┤
+│  Select Client                             │
+│  [🔍 Search clients...              ]      │
+│  ┌──────────────────────────────────────┐  │
+│  │ ● Acme Corp     acme@example.com     │  │
+│  │   Beta Inc      beta@example.com     │  │
+│  └──────────────────────────────────────┘  │
+│                                            │
+│  ⚠ This client has no contact email       │  ← shown if selected client has no email
+│                                            │
+│              [Cancel]  [Send Email]        │
+└────────────────────────────────────────────┘
+```
+
+Props:
+```ts
+{
+  isOpen: boolean;
+  onClose: () => void;
+  release: GitHubRelease | null;
+  assetType: 'zipball' | 'asset';
+  assetId?: number;
+  assetName: string;
+  onSent: (clientName: string) => void;
+}
+```
+
+Behavior:
+- On open: fetch `onpremApi.list({ limit: 100, clientStatus: 'active' })` (one-time, cached in state)
+- Filter list client-side by `clientName` as user types in search
+- Clicking a row selects it (highlighted bg)
+- If selected client has no `contactEmail` → show warning, disable Send button
+- On submit → `releasesApi.share(releaseId, { deploymentId, assetType, assetId, assetName })`
+- On success → `onSent(clientName)` and close
+- On error → inline error message inside modal
+
+### Update `src/api/releases.ts`
+
+```ts
+share: (releaseId: number, body: {
+  deploymentId: string;
+  assetType: 'zipball' | 'asset';
+  assetId?: number;
+  assetName: string;
+}): Promise<{ message: string }> =>
+  apiClient.post(`/releases/${releaseId}/share`, body),
+```
+
+### Update `src/components/onprem/index.ts`
+
+Add: `export { ShareReleaseModal } from './ShareReleaseModal';`
+
+---
+
+## Files Summary
+
+| Action | File |
+|--------|------|
+| **Update** | `knoxadmin/src/modules/releases/releases.routes.ts` |
+| **Update** | `knoxadmin/src/modules/releases/releases.controller.ts` |
+| **Update** | `knoxadmin/src/services/email.service.ts` — add `sendReleaseEmail()` |
+| **Create** | `knoxadmin-client/src/components/onprem/ShareReleaseModal.tsx` |
+| **Update** | `knoxadmin-client/src/pages/onprem/ReleasesTab.tsx` |
+| **Update** | `knoxadmin-client/src/api/releases.ts` |
+| **Update** | `knoxadmin-client/src/components/onprem/index.ts` |
+
+---
+
+## Notes
+
+- No DB changes needed — download tokens are stateless JWTs signed with the existing `JWT_SECRET`
+- `APP_URL` in `.env` must be publicly reachable for the download link to work for the external client
+- In dev, `email.service.ts` logs the email to console (including the full download URL) instead of sending — useful for testing
+- Clients without `contactEmail` show a warning and the Send button is disabled
+
+---
+
+# Plan: Client Autosuggest Search API + Share Modal UX + Remove Source Archive Row
+
+**STATUS:** ✅ COMPLETED (2026-03-17)
+
+## Overview
+
+Three changes:
+1. New backend endpoint for lightweight client name search (powers autosuggest)
+2. Rework `ShareReleaseModal` to a proper autosuggest UX — type to search, dropdown suggestions, on select show name + read-only email
+3. Remove the source archive (`🗜️`) row from `ReleasesTab.tsx`
+
+---
+
+## Change 1 — Backend: Client Search Endpoint
+
+### New: `GET /api/onprem/search?q={query}`
+
+- Auth: `authenticate + authorize('read', 'OnPrem')`
+- Query: `q` (string, min 1 char)
+- Returns only `id`, `clientName`, `contactEmail` — no heavy fields
+- Limit: 10 results max
+- Filters: `clientStatus = 'active'`, `clientName ILIKE %q%`
+- Register BEFORE `/:id` route to avoid conflict
+
+**Response shape:**
+```json
+{
+  "data": [
+    { "id": "uuid", "clientName": "Acme Corp", "contactEmail": "acme@example.com" }
+  ]
+}
+```
+
+**Files:**
+- `onprem.service.ts` — add `searchClients(q: string)` using Drizzle `ilike`
+- `onprem.controller.ts` — add `searchClientsHandler`
+- `onprem.routes.ts` — add `GET /search` before the `/:id` route
+
+---
+
+## Change 2 — Frontend: Autosuggest UX in `ShareReleaseModal`
+
+### New UX flow
+
+```
+┌────────────────────────────────────────────┐
+│  Share Release                        [×]  │
+│  v1.4.0 — Appknox 1.4.0 Release           │
+├────────────────────────────────────────────┤
+│  Client                                    │
+│  ┌──────────────────────────────────────┐  │
+│  │ 🔍  Type client name...             │  │  ← input
+│  └──────────────────────────────────────┘  │
+│  ┌──────────────────────────────────────┐  │
+│  │  Acme Corp                           │  │  ← dropdown (shows while typing)
+│  │  Acme Industries                     │  │
+│  └──────────────────────────────────────┘  │
+│                                            │
+│  After selection:                          │
+│  ┌──────────────────────────────────────┐  │
+│  │ ✓  Acme Corp                    [×] │  │  ← selected state (clear button)
+│  └──────────────────────────────────────┘  │
+│  ┌──────────────────────────────────────┐  │
+│  │  acme@example.com  (read-only)       │  │  ← email shown below
+│  └──────────────────────────────────────┘  │
+│  ⚠ No contact email registered            │  ← only if no email
+│                                            │
+│              [Cancel]  [Send Email]        │
+└────────────────────────────────────────────┘
+```
+
+### State changes
+
+```ts
+// Remove:
+const [clients, setClients] = useState<OnpremDeployment[]>([]);  // no longer fetch all upfront
+
+// Add:
+const [suggestions, setSuggestions] = useState<ClientSuggestion[]>([]);
+const [showDropdown, setShowDropdown] = useState(false);
+const [isSearching, setIsSearching] = useState(false);
+```
+
+### Behavior
+
+- On open: clear state, focus input (no API call yet)
+- On keystroke: debounce 300ms → call `GET /api/onprem/search?q={input}` → show dropdown
+- Dropdown hidden when: input empty, or a client is already selected
+- Click suggestion: set `selectedClient`, clear `suggestions`, put `clientName` into input (read-only when selected), show email below
+- `[×]` clear button on selected state: clears `selectedClient`, clears input, refocuses
+- Send disabled if no selection or no `contactEmail`
+
+### New API call in `onprem.ts`
+
+```ts
+search: async (q: string): Promise<{ data: ClientSuggestion[] }> =>
+  (await apiClient.get('/onprem/search', { params: { q } })).data,
+```
+
+Where `ClientSuggestion = { id: string; clientName: string; contactEmail: string | null }`.
+
+### Files
+- `knoxadmin-client/src/components/onprem/ShareReleaseModal.tsx` — full UX rework
+- `knoxadmin-client/src/api/onprem.ts` — add `search()` method
+- `knoxadmin-client/src/types/onprem.types.ts` — add `ClientSuggestion` type
+
+---
+
+## Change 3 — Remove Source Archive Row from `ReleasesTab.tsx`
+
+Remove these lines from `ReleasesTab.tsx` (the static `🗜️` source code archive row):
+
+```tsx
+// Remove this block:
+<div className="flex items-center gap-3 p-3 rounded-lg bg-gray-50">
+  <span className="text-base flex-shrink-0">🗜️</span>
+  <div className="min-w-0">
+    <p className="text-sm font-medium text-gray-900">{release.tagName}-source.zip</p>
+    <p className="text-xs text-gray-500">Source code archive</p>
+  </div>
+</div>
+```
+
+If `release.assets` is empty after removing this, the assets section should not render (add `{release.assets.length > 0 && ...}` guard).
+
+---
+
+## Files Summary
+
+| Action | File |
+|--------|------|
+| **Update** | `knoxadmin/src/modules/onprem/onprem.service.ts` — add `searchClients()` |
+| **Update** | `knoxadmin/src/modules/onprem/onprem.controller.ts` — add `searchClientsHandler` |
+| **Update** | `knoxadmin/src/modules/onprem/onprem.routes.ts` — add `GET /search` |
+| **Update** | `knoxadmin-client/src/api/onprem.ts` — add `search()` |
+| **Update** | `knoxadmin-client/src/types/onprem.types.ts` — add `ClientSuggestion` |
+| **Update** | `knoxadmin-client/src/components/onprem/ShareReleaseModal.tsx` — autosuggest UX |
+| **Update** | `knoxadmin-client/src/pages/onprem/ReleasesTab.tsx` — remove source archive row |

@@ -3,7 +3,6 @@ import { NavLink, Outlet, Navigate } from 'react-router-dom';
 const tabs = [
   { path: '/settings/users', label: 'Users' },
   { path: '/settings/invites', label: 'Pending Invites' },
-  { path: '/settings/notifications', label: 'Notifications' },
 ];
 
 const SettingsPage = () => (

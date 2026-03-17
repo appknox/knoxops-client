@@ -32,6 +32,11 @@ export const onpremApi = {
     return response.data;
   },
 
+  searchClients: async (q: string): Promise<{ id: string; clientName: string; contactEmail: string | null }[]> => {
+    const response = await apiClient.get<{ data: { id: string; clientName: string; contactEmail: string | null }[] }>('/onprem/search', { params: { q } });
+    return response.data.data;
+  },
+
   getDistinctVersions: async (): Promise<string[]> => {
     const response = await apiClient.get<{ data: string[] }>('/onprem/distinct-versions');
     return response.data.data;
