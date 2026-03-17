@@ -4,3 +4,5 @@ export { ClientStatusBadge, DeploymentStatusBadge, EnvironmentTypeBadge } from '
 export { DeleteOnpremDialog } from './DeleteOnpremDialog';
 export { VersionHistoryModal } from './VersionHistoryModal';
 export { DeploymentHistoryModal } from './DeploymentHistoryModal';
+export { RecordPatchDialog } from './RecordPatchDialog';
+export { PatchAlertModal } from './PatchAlertModal';

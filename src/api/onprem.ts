@@ -284,4 +284,19 @@ export const onpremApi = {
     });
     return response.data;
   },
+
+  // ============================================
+  // PATCH MANAGEMENT
+  // ============================================
+
+  recordPatch: async (
+    id: string,
+    data: {
+      patchDate: string;
+      newVersion?: string;
+      nextScheduledPatchDate?: string;
+    }
+  ): Promise<void> => {
+    await apiClient.patch(`/onprem/${id}/record-patch`, data);
+  },
 };

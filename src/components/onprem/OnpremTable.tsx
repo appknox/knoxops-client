@@ -1,4 +1,4 @@
-import { History, Pencil, Trash2, Server, Download, MessageSquare } from 'lucide-react';
+import { History, Pencil, Trash2, Server, Download, MessageSquare, CheckCheck, BellRing } from 'lucide-react';
 import { Pagination } from '@/components/ui';
 import { ClientStatusBadge, EnvironmentTypeBadge } from './OnpremStatusBadge';
 import { usePermissions } from '@/hooks/usePermissions';
@@ -18,6 +18,8 @@ interface OnpremTableProps {
   onViewHistory: (deployment: OnpremDeployment) => void;
   onViewComments: (deployment: OnpremDeployment) => void;
   onDownload?: (deployment: OnpremDeployment) => void;
+  onPatchClick?: (deployment: OnpremDeployment) => void;
+  onRecordPatch?: (deployment: OnpremDeployment) => void;
   isLoading?: boolean;
 }
 
@@ -39,6 +41,8 @@ const OnpremTable = ({
   onViewHistory,
   onViewComments,
   onDownload,
+  onPatchClick,
+  onRecordPatch,
   isLoading,
 }: OnpremTableProps) => {
   const { canManageOnprem, canDeleteOnprem } = usePermissions();
@@ -65,7 +69,7 @@ const OnpremTable = ({
   }
 
   return (
-    <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+    <div className="bg-white rounded-xl border border-gray-200">
       <div className="overflow-x-auto">
         <table className="w-full">
           <thead className="bg-gray-50 border-b border-gray-200">
@@ -94,7 +98,19 @@ const OnpremTable = ({
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-200">
-            {deployments.map((deployment) => (
+            {deployments.map((deployment) => {
+              // Calculate patch proximity once per row (includes overdue)
+              const patchDaysAway = deployment.nextScheduledPatchDate
+                ? Math.ceil(
+                    (new Date(deployment.nextScheduledPatchDate).getTime() - Date.now()) /
+                      (1000 * 60 * 60 * 24)
+                  )
+                : null;
+              // Show for upcoming (0-5 days) OR overdue (< 0 days), hide only if > 5 days away
+              // Only show indicator for active clients
+              const shouldShowIndicator = deployment.clientStatus === 'active' && patchDaysAway !== null && patchDaysAway <= 5;
+
+              return (
               <tr key={deployment.id} className="hover:bg-gray-50">
                 <td className="px-6 py-4 whitespace-nowrap">
                   <div className="flex items-center gap-3">
@@ -102,28 +118,54 @@ const OnpremTable = ({
                       <Server className="h-4 w-4 text-primary-600" />
                     </div>
                     <span className="font-medium text-gray-900">{deployment.clientName}</span>
-                    {(() => {
-                      if (!deployment.nextScheduledPatchDate) return null;
-                      const days = Math.ceil(
-                        (new Date(deployment.nextScheduledPatchDate).getTime() - Date.now()) /
-                          (1000 * 60 * 60 * 24)
-                      );
-                      if (days < 0 || days > 10) return null;
-                      const color =
-                        days <= 3 ? 'bg-red-500' : days <= 7 ? 'bg-yellow-400' : 'bg-green-500';
-                      const label =
-                        days === 0
-                          ? 'Patch due today'
-                          : `Patch in ${days} day${days === 1 ? '' : 's'} — ${new Date(deployment.nextScheduledPatchDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`;
+                    {shouldShowIndicator && (() => {
+                      const patchDate = new Date(deployment.nextScheduledPatchDate!);
+                      const days = patchDaysAway!;
+                      const dateLabel = patchDate.toLocaleDateString('en-US', {
+                        month: 'short', day: 'numeric', year: 'numeric',
+                      });
+                      const isOverdue = days < 0;
+                      const dotColor = isOverdue
+                        ? 'bg-red-600'
+                        : days === 0
+                        ? 'bg-red-500'
+                        : days <= 2
+                        ? 'bg-orange-500'
+                        : 'bg-yellow-400';
+                      const pulseClass = isOverdue
+                        ? 'animate-[pulse_0.8s_ease-in-out_infinite]'
+                        : 'animate-pulse';
+                      const tooltipTitle = isOverdue
+                        ? '⚠️ Patch Overdue'
+                        : days === 0
+                        ? '🚨 Due Today'
+                        : '🔔 Upcoming Patch';
+                      const tooltipText = isOverdue
+                        ? `Overdue — was due ${dateLabel} (${Math.abs(days)} day${Math.abs(days) === 1 ? '' : 's'} ago)`
+                        : days === 0
+                        ? `Due today — ${dateLabel}`
+                        : `Due in ${days} day${days === 1 ? '' : 's'} — ${dateLabel}`;
+
                       return (
-                        <span className="relative group ml-1">
-                          <span
-                            className={`inline-block w-2 h-2 rounded-full ${color} animate-pulse`}
+                        <div className="relative group inline-flex items-center ml-2 gap-1">
+                          {/* Clickable dot with dynamic color/pulse */}
+                          <button
+                            onClick={(e) => { e.stopPropagation(); onPatchClick?.(deployment); }}
+                            className={`w-2.5 h-2.5 rounded-full ${dotColor} ${pulseClass} cursor-pointer hover:scale-125 transition-transform`}
+                            title="Click to view patch details and send Slack alert"
                           />
-                          <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-max max-w-xs px-2 py-1 rounded bg-gray-900 text-white text-xs opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity z-10 whitespace-nowrap">
-                            {label}
-                          </span>
-                        </span>
+                          {/* Bell icon */}
+                          <BellRing className="h-3.5 w-3.5 text-blue-500" />
+                          {/* Hover tooltip card */}
+                          <div className="absolute top-full left-0 mt-2 w-56 bg-gray-900 text-white text-xs rounded-lg px-3 py-2.5 opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity z-20 shadow-lg space-y-1">
+                            <p className={`font-semibold ${isOverdue ? 'text-red-300' : 'text-yellow-300'}`}>{tooltipTitle}</p>
+                            <p>📅 {dateLabel}</p>
+                            <p>⏰ {tooltipText.split(' — ')[1] || tooltipText}</p>
+                            {deployment.currentVersion && <p>🔖 v{deployment.currentVersion}</p>}
+                            <p>🖥 {deployment.environmentType}</p>
+                            <p className="text-yellow-200 mt-2 border-t border-gray-700 pt-1">Click to send Slack alert</p>
+                          </div>
+                        </div>
                       );
                     })()}
                   </div>
@@ -173,6 +215,15 @@ const OnpremTable = ({
                     >
                       <Pencil className="h-4 w-4" />
                     </button>
+                    {onRecordPatch && canManageOnprem && shouldShowIndicator && (
+                      <button
+                        onClick={() => onRecordPatch(deployment)}
+                        className="p-1.5 rounded-lg transition-colors text-emerald-600 hover:bg-emerald-50 cursor-pointer"
+                        title="Record Patch Deployment"
+                      >
+                        <CheckCheck className="h-4 w-4" />
+                      </button>
+                    )}
                     <button
                       onClick={canDeleteOnprem ? () => onDelete(deployment) : undefined}
                       disabled={!canDeleteOnprem}
@@ -188,7 +239,8 @@ const OnpremTable = ({
                   </div>
                 </td>
               </tr>
-            ))}
+            );
+            })}
           </tbody>
         </table>
       </div>

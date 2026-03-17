@@ -5,3 +5,4 @@ export { auditLogsApi } from './audit-logs';
 export { usersApi } from './users';
 export { invitesApi } from './invites';
 export { onpremApi } from './onprem';
+export { notificationsApi } from './notifications';

@@ -4661,9 +4661,9 @@ npm install --save-dev @types/archiver
 
 ---
 
-# Implementation Plan: Slack Patch Notifications — Frontend UI & Env Wiring
+# Implementation Plan: Slack Patch Notifications — Backend
 
-**STATUS:** ⏳ PENDING
+**STATUS:** ✅ COMPLETED (2026-03-17)
 
 ## Overview
 
@@ -4839,3 +4839,1085 @@ The cron schedule (`0 9 * * *` = 9 AM daily) can be changed in `scheduler.servic
 ## Completion Log
 
 <!-- Fill in when done -->
+
+---
+
+# Implementation Plan: Slack Bot Token Integration (Replace Webhook)
+
+**STATUS:** ❌ SUPERSEDED — decided to keep Incoming Webhook approach (simpler, sufficient for single-channel use)
+
+## Overview
+
+Replace the current `@slack/webhook` (Incoming Webhook URL) approach with a **Slack Bot Token** (`xoxb-...`) + named channel approach — matching the pattern used in mycroft.
+
+**Why:** Bot token allows posting to multiple named channels, configuring channels via env vars or UI, and is more flexible as more notification types are added.
+
+**What changes:**
+- Backend: swap `@slack/webhook` → `@slack/web-api`, use `chat.postMessage` with `Authorization: Bearer <token>`
+- Env: replace `SLACK_WEBHOOK_URL` with `SLACK_BOT_TOKEN` + `SLACK_PATCH_CHANNEL`
+- Everything else (cron, patch-reminder service, message blocks, routes) stays the same
+
+---
+
+## How to Create a Slack Bot Token
+
+1. Go to https://api.slack.com/apps → **Create New App** → **From scratch**
+2. Name it `KnoxAdmin`, pick your workspace
+3. Left sidebar → **OAuth & Permissions**
+4. Under **Scopes → Bot Token Scopes**, add:
+   - `chat:write` — post messages
+   - `chat:write.public` — post to channels the bot hasn't joined (avoids needing to invite bot)
+5. Click **Install to Workspace** → Allow
+6. Copy the **Bot User OAuth Token** — starts with `xoxb-...`
+7. Create a Slack channel (e.g. `#knoxadmin-alerts`) — no need to invite the bot if you added `chat:write.public`
+
+---
+
+## Env Changes
+
+**File:** `knoxadmin/.env` and `knoxadmin/.env.example`
+
+Remove:
+```env
+SLACK_WEBHOOK_URL=https://hooks.slack.com/services/...
+```
+
+Add:
+```env
+# Slack Bot Token (xoxb-...)
+SLACK_BOT_TOKEN=xoxb-your-token-here
+
+# Slack channel name or ID to post patch notifications
+SLACK_PATCH_CHANNEL=#knoxadmin-alerts
+```
+
+---
+
+## Backend Changes
+
+### 1. Env Schema — `knoxadmin/src/config/env.ts`
+
+Add to `envSchema`:
+```ts
+SLACK_BOT_TOKEN: z.string().startsWith('xoxb-').optional(),
+SLACK_PATCH_CHANNEL: z.string().default('#knoxadmin-alerts'),
+```
+
+Both optional so the app starts without Slack configured (notifications are skipped gracefully).
+
+### 2. Replace `@slack/webhook` with `@slack/web-api`
+
+```bash
+npm uninstall @slack/webhook
+npm install @slack/web-api
+```
+
+`@slack/web-api` is the official Slack SDK — covers all API methods including `chat.postMessage`.
+
+### 3. Rewrite `slack-notification.service.ts`
+
+**Full rewrite of the core sender function:**
+
+```ts
+import { WebClient } from '@slack/web-api';
+import { env } from '../config/env.js';
+
+function getClient(): WebClient | null {
+  if (!env.SLACK_BOT_TOKEN) {
+    console.warn('SLACK_BOT_TOKEN not configured. Skipping Slack notification.');
+    return null;
+  }
+  return new WebClient(env.SLACK_BOT_TOKEN);
+}
+
+export async function sendSlackNotification(
+  message: string,
+  blocks?: any[],
+  channel?: string
+): Promise<void> {
+  const client = getClient();
+  if (!client) return;
+
+  const targetChannel = channel ?? env.SLACK_PATCH_CHANNEL;
+
+  try {
+    const result = await client.chat.postMessage({
+      channel: targetChannel,
+      text: message,
+      blocks: blocks ?? undefined,
+    });
+
+    if (!result.ok) {
+      console.error(`Slack API error: ${result.error}`);
+    } else {
+      console.log(`Slack notification sent to ${targetChannel}`);
+    }
+  } catch (error) {
+    console.error('Failed to send Slack notification:', error);
+    throw error;
+  }
+}
+```
+
+Everything else in the file (`sendPatchReminders`, `sendSinglePatchReminder`, block structures) stays identical — they all call `sendSlackNotification()` which is the only thing changing.
+
+### 4. No changes needed to:
+- `patch-reminder.service.ts` — calls `sendPatchReminders()`, unchanged
+- `scheduler.service.ts` — cron job, unchanged
+- `notifications.routes.ts` — API routes, unchanged
+- `onprem.service.ts` etc. — unchanged
+
+---
+
+## Frontend Changes
+
+Update the Notifications Settings tab plan (from previous plan) to show the configured channel name:
+
+**`NotificationsTab.tsx`** — add a read-only info row:
+```tsx
+<div className="text-sm text-gray-500">
+  Notifications are sent to <code className="bg-gray-100 px-1 rounded">#knoxadmin-alerts</code> daily at 9:00 AM.
+</div>
+```
+
+The channel name comes from the backend — optionally expose it via a `GET /api/notifications/config` endpoint:
+```ts
+// notifications.routes.ts — add:
+app.get('/notifications/config', { preHandler: [authenticate] }, async (_req, reply) => {
+  return reply.send({
+    slackConfigured: !!env.SLACK_BOT_TOKEN,
+    patchChannel: env.SLACK_PATCH_CHANNEL,
+  });
+});
+```
+
+---
+
+## Files to Modify
+
+| File | Change |
+|------|--------|
+| `knoxadmin/package.json` | `npm uninstall @slack/webhook && npm install @slack/web-api` |
+| `knoxadmin/src/config/env.ts` | Replace `SLACK_WEBHOOK_URL` → `SLACK_BOT_TOKEN` + `SLACK_PATCH_CHANNEL` |
+| `knoxadmin/src/services/slack-notification.service.ts` | Rewrite `sendSlackNotification()` to use `WebClient.chat.postMessage` |
+| `knoxadmin/.env` | Replace webhook URL with bot token + channel |
+| `knoxadmin/.env.example` | Same |
+| `knoxadmin/src/modules/notifications/notifications.routes.ts` | Add `GET /notifications/config` endpoint |
+| `knoxadmin-client/src/pages/settings/NotificationsTab.tsx` | Show channel name + Slack configured status |
+
+---
+
+## Implementation Order
+
+1. Create Slack app + bot token (manual step in Slack UI)
+2. `npm uninstall @slack/webhook && npm install @slack/web-api`
+3. Update `env.ts` schema
+4. Rewrite `slack-notification.service.ts`
+5. Update `.env` with real token + channel
+6. Add `GET /notifications/config` route
+7. Build `NotificationsTab.tsx` frontend
+
+---
+
+## Completion Log
+
+<!-- Fill in when done -->
+
+---
+
+# Implementation Plan: Slack Notifications — Frontend Settings Tab
+
+**STATUS:** ✅ COMPLETED (2026-03-17)
+
+## Overview
+
+Backend is fully implemented and live:
+- ✅ Webhook URL in `.env` + Zod schema
+- ✅ `slack-notification.service.ts` — sends Block Kit messages with category headers (patch/info/warning/error)
+- ✅ `patch-reminder.service.ts` — queries `nextScheduledPatchDate` within N days
+- ✅ `scheduler.service.ts` — cron at 9 AM daily; fires 5s after startup in dev
+- ✅ `POST /api/notifications/patch-reminders/trigger` — manual send
+- ✅ `GET /api/notifications/patch-reminders/preview?daysAhead=N` — preview list
+
+**What this plan adds:** Frontend Settings tab to preview upcoming patches and manually trigger notifications.
+
+---
+
+## Files to Create / Modify
+
+| File | Change |
+|------|---------|
+| `src/api/notifications.ts` | New — API client for preview + trigger endpoints |
+| `src/pages/settings/NotificationsTab.tsx` | New — Settings tab UI |
+| `src/pages/settings/SettingsPage.tsx` | Add Notifications tab entry |
+
+---
+
+## Step 1 — API Client: `src/api/notifications.ts`
+
+```ts
+import apiClient from './client';
+
+export interface UpcomingPatch {
+  id: string;
+  clientName: string;
+  nextScheduledPatchDate: string;
+  daysUntilPatch: number;
+  currentVersion: string | null;
+  environmentType: string;
+}
+
+export const notificationsApi = {
+  previewPatchReminders: async (
+    daysAhead = 10
+  ): Promise<{ upcomingPatches: UpcomingPatch[]; count: number }> => {
+    const response = await apiClient.get('/notifications/patch-reminders/preview', {
+      params: { daysAhead },
+    });
+    return response.data;
+  },
+
+  triggerPatchReminders: async (): Promise<{
+    message: string;
+    upcomingPatchesCount: number;
+  }> => {
+    const response = await apiClient.post('/notifications/patch-reminders/trigger');
+    return response.data;
+  },
+};
+```
+
+---
+
+## Step 2 — NotificationsTab: `src/pages/settings/NotificationsTab.tsx`
+
+### Layout
+
+```
+┌──────────────────────────────────────────────────────┐
+│  Slack Notifications                                  │
+│  ─────────────────────────────────────────────────  │
+│  Patch reminders sent daily at 9:00 AM to #onprem-  │
+│  alerts. Showing patches due within [10 ▼] days.    │
+│                                              [Send Now] │
+│                                                      │
+│  ┌─────────────────────────────────────────────────┐ │
+│  │ Client      │ Env    │ Version │ Date    │ Days  │ │
+│  │─────────────────────────────────────────────────│ │
+│  │ ClientA     │ prod   │ v2.1    │ Mar 19  │ 🔴 2  │ │
+│  │ ClientB     │ staging│ v2.0    │ Mar 22  │ 🟡 5  │ │
+│  │ ClientC     │ prod   │ v1.9    │ Mar 26  │ 🟢 9  │ │
+│  └─────────────────────────────────────────────────┘ │
+│                                                      │
+│  No patches → "No upcoming patches in the next      │
+│                N days."                              │
+└──────────────────────────────────────────────────────┘
+```
+
+### Key logic
+
+```tsx
+// Urgency badge
+const urgency = (days: number) => {
+  if (days <= 3) return { emoji: '🔴', label: 'Critical', className: 'bg-red-100 text-red-700' };
+  if (days <= 7) return { emoji: '🟡', label: 'Soon',     className: 'bg-yellow-100 text-yellow-700' };
+  return           { emoji: '🟢', label: 'Upcoming',   className: 'bg-green-100 text-green-700' };
+};
+
+// daysAhead selector: dropdown [7, 10, 14, 30]
+// Re-fetches preview on change
+
+// Send Now button:
+// - Shows ConfirmDialog: "Send Slack notification for N upcoming patches?"
+// - On confirm: calls triggerPatchReminders()
+// - Shows inline success/error notification banner (auto-dismiss 4s)
+// - If count === 0: "No upcoming patches to notify about" (no confirm needed, just info)
+```
+
+### States
+
+```ts
+const [daysAhead, setDaysAhead] = useState(10);
+const [patches, setPatches] = useState<UpcomingPatch[]>([]);
+const [isLoading, setIsLoading] = useState(false);
+const [isSending, setIsSending] = useState(false);
+const [showConfirm, setShowConfirm] = useState(false);
+const [notification, setNotification] = useState<{ type: 'success'|'error'; message: string } | null>(null);
+```
+
+---
+
+## Step 3 — Wire into SettingsPage
+
+**File:** `src/pages/settings/SettingsPage.tsx` (or wherever tabs are defined)
+
+Add a "Notifications" tab alongside Users, Invites, etc.:
+
+```tsx
+{ id: 'notifications', label: 'Notifications', component: <NotificationsTab /> }
+```
+
+---
+
+## Completion Log
+
+✅ **Created NotificationsTab.tsx** — Full implementation with:
+- daysAhead state with dropdown selector (7, 10, 14, 30 days)
+- Dynamic patch preview fetching on daysAhead change
+- Urgency color-coding: 🔴 Critical (≤3d), 🟡 Soon (≤7d), 🟢 Upcoming (>7d)
+- Confirmation dialog before sending notification
+- Success/error inline notifications with 4s auto-dismiss
+- Empty state message when no patches scheduled
+
+✅ **Wired into SettingsPage.tsx** — Added:
+- Route: `/settings/notifications` with NotificationsTab component
+- Tab navigation entry with "Notifications" label
+- Updated App.tsx imports and routing configuration
+- Exported NotificationsTab from settings index
+
+✅ **API Integration** — Using:
+- `notificationsApi.previewPatchReminders(daysAhead)` for patch preview
+- `notificationsApi.triggerPatchReminders()` for manual notification send
+
+---
+
+# Implementation Plan: Patch Indicator, Slack Trigger & Record Patch Deployment
+
+**STATUS:** ✅ COMPLETED (2026-03-17)
+
+## Overview
+
+Three connected features on the onprem listing page:
+
+1. **Patch indicator dot** — animated red/yellow dot next to client name when `nextScheduledPatchDate` is within 5 days. Hover shows details.
+2. **Per-row Slack trigger icon** — send a Slack notification for that specific client with one click.
+3. **Record Patch Deployment** — a "Mark Patch Done" action that records the patch in `onprem_version_history`, updates `lastPatchDate`, and clears/sets `nextScheduledPatchDate`.
+
+---
+
+## Current State
+
+The pulsing dot is **partially implemented** in `OnpremTable.tsx` but uses a 10-day threshold and has no Slack trigger. The Slack trigger and patch recording are not yet built.
+
+---
+
+## Feature 1 — Patch Indicator Dot (Update threshold to 5 days)
+
+**File:** `src/components/onprem/OnpremTable.tsx`
+
+Change the visibility threshold from 10 days → 5 days, and adjust colours accordingly:
+
+```ts
+if (days < 0 || days > 5) return null;  // was: > 10
+
+const color =
+  days <= 1 ? 'bg-red-500' :
+  days <= 3 ? 'bg-orange-400' :
+  'bg-yellow-400';
+```
+
+Hover tooltip should show:
+```
+Next patch: Mar 19, 2026 (2 days away)
+```
+
+---
+
+## Feature 2 — Per-Row Slack Trigger Icon
+
+### 2a. Backend — new endpoint
+
+**File:** `knoxadmin/src/modules/notifications/notifications.routes.ts`
+
+Add `POST /api/notifications/patch-reminders/trigger/:deploymentId`:
+
+```ts
+app.post('/notifications/patch-reminders/trigger/:deploymentId', {
+  preHandler: [authenticate, authorize('onprem', 'update')],
+}, async (request, reply) => {
+  const { deploymentId } = request.params as { deploymentId: string };
+
+  const deployment = await getOnpremById(deploymentId);
+  if (!deployment?.nextScheduledPatchDate) {
+    return reply.status(400).send({ message: 'No upcoming patch scheduled for this deployment' });
+  }
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const patchDate = new Date(deployment.nextScheduledPatchDate);
+  const daysUntilPatch = Math.ceil((patchDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+
+  await sendPatchReminders([{
+    clientName: deployment.clientName,
+    nextPatchDate: patchDate.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }),
+    daysUntilPatch,
+    currentVersion: deployment.currentVersion,
+    environmentType: deployment.environmentType,
+  }]);
+
+  return reply.send({ message: `Slack notification sent for ${deployment.clientName}` });
+});
+```
+
+### 2b. Frontend API — `src/api/notifications.ts`
+
+Add method:
+```ts
+triggerForDeployment: async (deploymentId: string): Promise<{ message: string }> => {
+  const response = await apiClient.post(`/notifications/patch-reminders/trigger/${deploymentId}`);
+  return response.data;
+},
+```
+
+### 2c. Frontend — `OnpremTable.tsx`
+
+Add a `BellRing` icon button next to the patch dot, only visible when the dot is shown (within 5 days):
+
+```tsx
+{/* Slack trigger icon — only shown alongside patch dot */}
+<button
+  onClick={() => onNotifyPatch(deployment)}
+  className="p-1 text-gray-400 hover:text-blue-600 transition-colors"
+  title="Send Slack notification for this patch"
+>
+  <BellRing className="h-3.5 w-3.5" />
+</button>
+```
+
+Add `onNotifyPatch: (deployment: OnpremDeployment) => void` to `OnpremTableProps`.
+
+### 2d. Frontend — `OnpremListPage.tsx`
+
+Handle the action with confirmation + success/error notification:
+
+```ts
+const handleNotifyPatch = async (deployment: OnpremDeployment) => {
+  // show ConfirmDialog: "Send Slack alert for [ClientName]'s upcoming patch?"
+  // on confirm: call notificationsApi.triggerForDeployment(deployment.id)
+  // show success banner: "Slack notification sent for ClientName"
+};
+```
+
+---
+
+## Feature 3 — Record Patch Deployment
+
+When a patch is completed, the admin needs to:
+- Record the patch in `onprem_version_history` (actionType: `'patch'`)
+- Update `lastPatchDate` on the deployment to today
+- Optionally set the next `nextScheduledPatchDate`
+
+### 3a. Backend — new endpoint
+
+**File:** `knoxadmin/src/modules/onprem/onprem.routes.ts`
+
+Add `POST /api/onprem/:id/record-patch`:
+
+```ts
+app.post('/:id/record-patch', {
+  preHandler: [authenticate, authorize('onprem', 'update')],
+  schema: {
+    body: {
+      type: 'object',
+      required: ['version'],
+      properties: {
+        version: { type: 'string' },
+        patchNotes: { type: 'string' },
+        nextScheduledPatchDate: { type: 'string', format: 'date-time', nullable: true },
+      },
+    },
+  },
+}, recordPatch);
+```
+
+**File:** `knoxadmin/src/modules/onprem/onprem.controller.ts`
+
+```ts
+export async function recordPatch(request, reply) {
+  const { id } = request.params;
+  const { version, patchNotes, nextScheduledPatchDate } = request.body;
+  const user = request.user as User;
+
+  const result = await recordPatchDeployment(id, {
+    version,
+    patchNotes,
+    nextScheduledPatchDate: nextScheduledPatchDate ?? null,
+    appliedBy: user.id,
+  });
+
+  return reply.send(result);
+}
+```
+
+**File:** `knoxadmin/src/modules/onprem/onprem.service.ts`
+
+```ts
+export async function recordPatchDeployment(deploymentId: string, input: {
+  version: string;
+  patchNotes?: string;
+  nextScheduledPatchDate: Date | null;
+  appliedBy: string;
+}) {
+  const deployment = await getOnpremById(deploymentId);
+  if (!deployment) throw new NotFoundError('Deployment not found');
+
+  const now = new Date();
+
+  // Insert version history record
+  await db.insert(onpremVersionHistory).values({
+    deploymentId,
+    version: input.version,
+    actionType: 'patch',
+    patchNotes: input.patchNotes ?? null,
+    appliedBy: input.appliedBy,
+    appliedAt: now,
+  });
+
+  // Update deployment: set lastPatchDate, update nextScheduledPatchDate
+  await db.update(onpremDeployments)
+    .set({
+      lastPatchDate: now,
+      currentVersion: input.version,
+      nextScheduledPatchDate: input.nextScheduledPatchDate,
+      updatedAt: now,
+    })
+    .where(eq(onpremDeployments.id, deploymentId));
+
+  return { message: 'Patch recorded successfully' };
+}
+```
+
+### 3b. Frontend API — `src/api/onprem.ts`
+
+```ts
+recordPatch: async (deploymentId: string, data: {
+  version: string;
+  patchNotes?: string;
+  nextScheduledPatchDate?: string | null;
+}): Promise<{ message: string }> => {
+  const response = await apiClient.post(`/onprem/${deploymentId}/record-patch`, data);
+  return response.data;
+},
+```
+
+### 3c. Frontend — Record Patch Dialog
+
+Create `src/components/onprem/RecordPatchDialog.tsx`:
+
+```
+┌─────────────────────────────────────┐
+│  Record Patch Deployment             │
+│  ─────────────────────────────────  │
+│  Client: Acme Corp                   │
+│                                      │
+│  Version applied *                   │
+│  [2.5.1                          ]   │
+│                                      │
+│  Next scheduled patch date           │
+│  [Date picker            ] (optional)│
+│                                      │
+│  Patch notes                         │
+│  [Textarea               ] (optional)│
+│                                      │
+│          [Cancel]  [Record Patch]    │
+└─────────────────────────────────────┘
+```
+
+On submit:
+- Calls `onpremApi.recordPatch(deployment.id, { version, patchNotes, nextScheduledPatchDate })`
+- On success: refreshes the listing → dot disappears if `nextScheduledPatchDate` is > 5 days away or null
+
+### 3d. Frontend — Trigger from listing
+
+Add a `CheckCircle` icon button in the onprem table actions column (visible only when `nextScheduledPatchDate` is set):
+
+```tsx
+{deployment.nextScheduledPatchDate && (
+  <button
+    onClick={() => onRecordPatch(deployment)}
+    className="p-1.5 text-green-600 hover:bg-green-50 rounded-lg transition-colors"
+    title="Record patch deployment"
+  >
+    <CheckCircle className="h-4 w-4" />
+  </button>
+)}
+```
+
+---
+
+## Files to Create / Modify
+
+| File | Change |
+|------|---------|
+| `knoxadmin/src/modules/notifications/notifications.routes.ts` | Add `POST /trigger/:deploymentId` |
+| `knoxadmin/src/modules/onprem/onprem.routes.ts` | Add `POST /:id/record-patch` |
+| `knoxadmin/src/modules/onprem/onprem.controller.ts` | Add `recordPatch` handler |
+| `knoxadmin/src/modules/onprem/onprem.service.ts` | Add `recordPatchDeployment()` |
+| `knoxadmin-client/src/api/notifications.ts` | Add `triggerForDeployment()` |
+| `knoxadmin-client/src/api/onprem.ts` | Add `recordPatch()` |
+| `knoxadmin-client/src/components/onprem/OnpremTable.tsx` | Update dot threshold to 5 days; add Slack + RecordPatch icons |
+| `knoxadmin-client/src/pages/onprem/OnpremListPage.tsx` | Add `handleNotifyPatch` + `handleRecordPatch` handlers |
+| `knoxadmin-client/src/components/onprem/RecordPatchDialog.tsx` | New dialog component |
+
+---
+
+## Implementation Order
+
+1. Backend: `recordPatchDeployment()` service + route + controller
+2. Backend: per-deployment Slack trigger route
+3. Frontend API: `notificationsApi.triggerForDeployment` + `onpremApi.recordPatch`
+4. Frontend: Update dot threshold in `OnpremTable` (5 days)
+5. Frontend: Add Slack trigger icon + `onNotifyPatch` handler with confirm dialog
+6. Frontend: `RecordPatchDialog` component
+7. Frontend: Wire `CheckCircle` icon into table + `onRecordPatch` handler in list page
+
+---
+
+## Completion Log
+
+<!-- Fill in when done -->
+
+---
+
+# Implementation Plan: Patch Indicator & Record Patch — Bug Fixes
+
+**STATUS:** ✅ COMPLETED (2026-03-17)
+
+## Fix 1 — Tooltip hidden behind table header
+
+**Root cause — two compounding issues:**
+
+**Issue A:** The outer wrapper has `overflow-hidden` which clips any absolutely-positioned child that escapes its bounds.
+
+**Issue B:** The tooltip uses `bottom-full` — it pops **upward** toward the `thead`. When the row is near the top of the table, the tooltip travels up behind the sticky header row (`thead` background covers it). Removing `overflow-hidden` alone doesn't fix this because the `thead` is a sibling element in the DOM with its own background.
+
+**Fix A:** Remove `overflow-hidden` from the outer wrapper:
+
+```tsx
+// Change:
+<div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+// To:
+<div className="bg-white rounded-xl border border-gray-200">
+```
+
+**Fix B:** Flip the tooltip to open **downward** (`top-full`) so it always opens away from the header into the safe space below the dot:
+
+```tsx
+// Change:
+<div className="absolute bottom-full left-0 mb-2 w-56 ...">
+// To:
+<div className="absolute top-full left-0 mt-2 w-56 ...">
+```
+
+Downward tooltip works reliably for all rows since there is always row content below, and it never conflicts with the fixed header above.
+
+**File:** `knoxadmin-client/src/components/onprem/OnpremTable.tsx` lines 72 and 136
+
+---
+
+## Fix 2 — Record patch button shown for all rows
+
+**Root cause:** The `CheckCheck` button is rendered whenever `onRecordPatch && canManageOnprem` — no patch-proximity check.
+
+**Fix:** Add the same 5-day condition used by the dot. Extract the days calculation into a variable at the row level and gate both the dot and the button on it:
+
+```tsx
+// Compute once per row, above the JSX:
+const patchDaysAway = deployment.nextScheduledPatchDate
+  ? Math.ceil((new Date(deployment.nextScheduledPatchDate).getTime() - Date.now()) / (1000 * 60 * 60 * 24))
+  : null;
+const isPatchNearby = patchDaysAway !== null && patchDaysAway >= 0 && patchDaysAway <= 5;
+
+// Gate the record patch button:
+{onRecordPatch && canManageOnprem && isPatchNearby && (
+  <button onClick={() => onRecordPatch(deployment)} ...>
+    <CheckCheck className="h-4 w-4" />
+  </button>
+)}
+
+// Pass isPatchNearby into the dot render too (replaces inline days calc):
+{isPatchNearby && (
+  // dot + tooltip + bell icon
+)}
+```
+
+**File:** `knoxadmin-client/src/components/onprem/OnpremTable.tsx` lines 110–144, 192–200
+
+---
+
+## Fix 3 — `value.toISOString is not a function` on record-patch
+
+**Root cause:** Drizzle's `PgTimestamp` column calls `.toISOString()` on the value internally — it expects a `Date` object. The service is passing `.toISOString()` strings instead:
+
+```ts
+// onprem.service.ts — current (broken):
+lastPatchDate: new Date(data.patchDate).toISOString(),       // ❌ string
+updatedAt: new Date().toISOString(),                          // ❌ string
+nextScheduledPatchDate: new Date(data.nextScheduledPatchDate).toISOString(), // ❌ string
+```
+
+**Fix:** Pass `Date` objects directly:
+
+```ts
+// onprem.service.ts — fixed:
+lastPatchDate: new Date(data.patchDate),       // ✅ Date
+updatedAt: new Date(),                          // ✅ Date
+nextScheduledPatchDate: new Date(data.nextScheduledPatchDate), // ✅ Date
+```
+
+**File:** `knoxadmin/src/modules/onprem/onprem.service.ts` lines 897–906
+
+---
+
+## Files to Modify
+
+| File | Fix |
+|------|-----|
+| `knoxadmin-client/src/components/onprem/OnpremTable.tsx` | Remove `overflow-hidden`; extract `isPatchNearby`; gate record patch button |
+| `knoxadmin/src/modules/onprem/onprem.service.ts` | Pass `Date` objects instead of `.toISOString()` strings to Drizzle |
+
+---
+
+## Completion Log
+
+<!-- Fill in when done -->
+
+---
+
+# Implementation Plan: Patch Alert Click Popup with Slack CTA
+
+**STATUS:** ✅ COMPLETED (2026-03-17)
+
+## Overview
+
+Currently clicking the pulsing dot does nothing. The new behaviour:
+
+- **Hover** → tooltip (already works, just needs overflow fix)
+- **Click the dot** → opens a popup/modal showing patch details + a "Send Slack Alert" button
+
+---
+
+## Popup Design
+
+```
+┌─────────────────────────────────────────┐
+│  🔴 Upcoming Patch — Acme Corp           │
+│  ─────────────────────────────────────  │
+│  📅 Scheduled    Mar 19, 2026            │
+│  ⏰ Due in        2 days                 │
+│  🔖 Version      v2.1.0                  │
+│  🖥  Environment  Production             │
+│                                          │
+│  [Cancel]   [🔔 Send Slack Alert]        │
+└─────────────────────────────────────────┘
+```
+
+- Uses existing `Modal` component
+- "Send Slack Alert" calls `POST /api/notifications/patch-reminders/trigger/:deploymentId`
+- Button shows a loading spinner while sending
+- On success: modal closes + inline success banner on listing page
+- On error: error message shown inside the modal (don't close)
+
+---
+
+## Changes
+
+### 1. `OnpremTable.tsx`
+
+- Make the pulsing dot a `<button>` (currently `<span>`)
+- On click: call `onPatchClick(deployment)` prop instead of firing directly
+- Remove the `BellRing` icon from next to the dot — the popup replaces it as the Slack CTA
+- Keep hover tooltip as-is
+
+```tsx
+// New prop:
+onPatchClick?: (deployment: OnpremDeployment) => void;
+
+// Dot becomes clickable:
+<button
+  onClick={(e) => { e.stopPropagation(); onPatchClick?.(deployment); }}
+  className="inline-block w-2.5 h-2.5 rounded-full bg-red-500 animate-pulse cursor-pointer"
+/>
+```
+
+### 2. New component: `src/components/onprem/PatchAlertModal.tsx`
+
+```tsx
+interface PatchAlertModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  deployment: OnpremDeployment | null;
+  onSent: (clientName: string) => void;  // callback to show success banner on parent
+}
+```
+
+State inside modal:
+```ts
+const [isSending, setIsSending] = useState(false);
+const [error, setError] = useState<string | null>(null);
+```
+
+On "Send Slack Alert":
+```ts
+setIsSending(true);
+setError(null);
+try {
+  await notificationsApi.triggerForDeployment(deployment.id);
+  onClose();
+  onSent(deployment.clientName);
+} catch (err) {
+  setError('Failed to send Slack alert. Please try again.');
+} finally {
+  setIsSending(false);
+}
+```
+
+### 3. `OnpremListPage.tsx`
+
+- Add state: `const [patchAlertTarget, setPatchAlertTarget] = useState<OnpremDeployment | null>(null)`
+- Pass `onPatchClick={setPatchAlertTarget}` to `OnpremTable`
+- Render `<PatchAlertModal>` at bottom of page:
+
+```tsx
+<PatchAlertModal
+  isOpen={!!patchAlertTarget}
+  onClose={() => setPatchAlertTarget(null)}
+  deployment={patchAlertTarget}
+  onSent={(name) => setNotification({ type: 'success', message: `Slack alert sent for ${name}` })}
+/>
+```
+
+### 4. `src/api/notifications.ts`
+
+Add `triggerForDeployment` if not present:
+```ts
+triggerForDeployment: async (deploymentId: string): Promise<{ message: string }> => {
+  const response = await apiClient.post(`/notifications/patch-reminders/trigger/${deploymentId}`);
+  return response.data;
+},
+```
+
+---
+
+## Files to Create / Modify
+
+| File | Change |
+|------|---------|
+| `knoxadmin-client/src/components/onprem/OnpremTable.tsx` | Dot → clickable button; add `onPatchClick` prop; remove standalone `BellRing` icon |
+| `knoxadmin-client/src/components/onprem/PatchAlertModal.tsx` | New modal component |
+| `knoxadmin-client/src/pages/onprem/OnpremListPage.tsx` | Add `patchAlertTarget` state; wire `onPatchClick`; render modal |
+| `knoxadmin-client/src/api/notifications.ts` | Ensure `triggerForDeployment` method exists |
+
+---
+
+## Completion Log
+
+<!-- Fill in when done -->
+
+---
+
+# Implementation Plan: Overdue Patch Alerts + CSM in Slack Notifications
+
+**STATUS:** ✅ COMPLETED
+
+## Overview
+
+Two additions:
+1. **Overdue patch handling** — dot + popup + Slack alert for patches whose date has already passed but haven't been recorded yet
+2. **CSM name in Slack alerts** — include the assigned CSM's name in every patch notification
+
+---
+
+## Part 1 — Overdue Patch Handling
+
+### Three states (replaces current binary on/off)
+
+| State | Condition | Dot | Tooltip |
+|-------|-----------|-----|---------|
+| Overdue | `days < 0` | 🔴 red, faster pulse | "Overdue — was due Mar 15 (2 days ago)" |
+| Due today | `days === 0` | 🔴 red pulse | "Due today — Mar 17" |
+| Upcoming | `1 ≤ days ≤ 5` | 🟠 orange pulse | "Due in 3 days — Mar 20" |
+
+Show the dot for `days <= 5` (same as now) **plus** all overdue (`days < 0`). No upper bound on how long ago — keep alerting until the admin records the patch.
+
+### 1a. Frontend — `OnpremTable.tsx`
+
+Change the visibility and colour logic:
+
+```ts
+// Current: if (days < 0 || days > 5) return null;
+// New:
+if (days > 5) return null;  // only hide when patch is >5 days away
+
+const color =
+  days < 0  ? 'bg-red-600 animate-[pulse_0.8s_ease-in-out_infinite]' :  // overdue — faster pulse
+  days === 0 ? 'bg-red-500 animate-pulse' :
+  days <= 2  ? 'bg-orange-500 animate-pulse' :
+               'bg-yellow-400 animate-pulse';
+
+const tooltipText =
+  days < 0
+    ? `Overdue — was due ${dateLabel} (${Math.abs(days)} day${Math.abs(days) === 1 ? '' : 's'} ago)`
+    : days === 0
+    ? `Due today — ${dateLabel}`
+    : `Due in ${days} day${days === 1 ? '' : 's'} — ${dateLabel}`;
+```
+
+### 1b. Frontend — `PatchAlertModal.tsx`
+
+Show different heading and colour based on state:
+
+```tsx
+const isOverdue = days < 0;
+const title = isOverdue ? '⚠️ Patch Overdue' : days === 0 ? '🚨 Due Today' : '🔔 Upcoming Patch';
+const titleClass = isOverdue ? 'text-red-600' : days === 0 ? 'text-red-500' : 'text-orange-500';
+
+// Overdue description line:
+{isOverdue && (
+  <p className="text-sm text-red-600 font-medium">
+    This patch was due {Math.abs(days)} day{Math.abs(days) === 1 ? '' : 's'} ago and has not been recorded yet.
+  </p>
+)}
+```
+
+Slack CTA button label changes:
+- Overdue: **"Send Overdue Alert to Slack"**
+- Due today: **"Send Urgent Alert to Slack"**
+- Upcoming: **"Send Patch Reminder to Slack"**
+
+### 1c. Backend — `patch-reminder.service.ts`
+
+**`getUpcomingPatches()`** — extend query to include overdue (look back up to 30 days):
+
+```ts
+// Current: gte(nextScheduledPatchDate, today)
+// New: remove the lower bound entirely, or look back 30 days:
+const lookbackDate = new Date(today);
+lookbackDate.setDate(lookbackDate.getDate() - 30);
+
+.where(
+  and(
+    isNotNull(onpremDeployments.nextScheduledPatchDate),
+    gte(onpremDeployments.nextScheduledPatchDate, lookbackDate),  // up to 30 days back
+    lte(onpremDeployments.nextScheduledPatchDate, futureDate)
+  )
+)
+```
+
+**`checkAndNotifyUpcomingPatches()`** — split into two groups and send with different context:
+
+```ts
+const overdue  = patches.filter(p => p.daysUntilPatch < 0);
+const upcoming = patches.filter(p => p.daysUntilPatch >= 0);
+
+if (overdue.length > 0)  await sendPatchReminders(overdue,  'overdue');
+if (upcoming.length > 0) await sendPatchReminders(upcoming, 'upcoming');
+```
+
+### 1d. Backend — `slack-notification.service.ts`
+
+Add `type` param to `sendPatchReminders()`:
+
+```ts
+export async function sendPatchReminders(
+  patches: PatchNotification[],
+  type: 'upcoming' | 'overdue' = 'upcoming'
+): Promise<void>
+```
+
+Different header block based on type:
+```ts
+const headerText = type === 'overdue'
+  ? '⚠️ Overdue Patch Deployments'
+  : '🔔 Upcoming Patch Schedule Reminders';
+
+const summaryText = type === 'overdue'
+  ? `*${patches.length} client${patches.length > 1 ? 's have' : ' has'} passed patch date without update:*`
+  : `*${patches.length} client${patches.length > 1 ? 's' : ''} require patch updates in the next 10 days:*`;
+```
+
+For overdue entries the urgency emoji in the row becomes `🔴` always, with text showing how many days ago:
+```ts
+const urgencyText = patch.daysUntilPatch < 0
+  ? `🔴 ${patch.nextPatchDate} _(${Math.abs(patch.daysUntilPatch)} days overdue)_`
+  : existing logic...
+```
+
+---
+
+## Part 2 — CSM Name in Slack Alerts
+
+### 2a. Backend — `patch-reminder.service.ts`
+
+Add CSM name to the query by joining `users`:
+
+```ts
+import { users } from '../db/schema/index.js';
+
+// In select:
+{
+  id: onpremDeployments.id,
+  clientName: onpremDeployments.clientName,
+  nextScheduledPatchDate: onpremDeployments.nextScheduledPatchDate,
+  currentVersion: onpremDeployments.currentVersion,
+  environmentType: onpremDeployments.environmentType,
+  csmFirstName: users.firstName,   // ← new
+  csmLastName: users.lastName,     // ← new
+}
+
+// Add join:
+.from(onpremDeployments)
+.leftJoin(users, eq(onpremDeployments.associatedCsmId, users.id))
+```
+
+Map to include CSM:
+```ts
+return {
+  ...existing fields,
+  csmName: result.csmFirstName
+    ? `${result.csmFirstName} ${result.csmLastName}`.trim()
+    : null,
+};
+```
+
+### 2b. Backend — `slack-notification.service.ts`
+
+Add `csmName` to `PatchNotification` interface:
+```ts
+interface PatchNotification {
+  clientName: string;
+  nextPatchDate: string;
+  daysUntilPatch: number;
+  currentVersion: string | null;
+  environmentType: string;
+  csmName: string | null;   // ← new
+}
+```
+
+Add CSM field to the Slack Block Kit section:
+```ts
+{ type: 'mrkdwn', text: `*CSM:*\n${patch.csmName || 'Unassigned'}` },
+```
+
+### 2c. Backend — `sendDeploymentPatchReminder()` in `patch-reminder.service.ts`
+
+Already fetches from `onpremDeployments` — add the same `leftJoin(users, ...)` and include `csmName` in the notification payload.
+
+---
+
+## Files to Modify
+
+| File | Change |
+|------|---------|
+| `knoxadmin/src/services/patch-reminder.service.ts` | Join `users` for CSM name; extend query to include overdue (30 day lookback); split overdue/upcoming groups |
+| `knoxadmin/src/services/slack-notification.service.ts` | Add `csmName` to `PatchNotification`; add `type` param to `sendPatchReminders`; different headers for overdue vs upcoming; show days-overdue in row |
+| `knoxadmin-client/src/components/onprem/OnpremTable.tsx` | Show dot for `days <= 5` AND overdue; colour/pulse speed by state; updated tooltip text |
+| `knoxadmin-client/src/components/onprem/PatchAlertModal.tsx` | Different title/colour/button label for overdue vs upcoming |
+
+---
+
+## Completion Log
+
+**Completed on 2026-03-17:**
+- ✅ Part 1 (Overdue Patch Handling): Frontend changes to OnpremTable.tsx and PatchAlertModal.tsx with dynamic visual indicators and titles for overdue/due-today/upcoming states; backend changes to patch-reminder.service.ts with 30-day lookback for overdue patches
+- ✅ Part 2 (CSM in Slack Alerts): Added csmName to PatchNotification interface, updated slack-notification.service.ts with type parameter ('overdue' | 'upcoming'), different headers and formatting based on patch type, included CSM name in Slack Block Kit message formatting, updated sendDeploymentPatchReminder() to join users and include CSM, split checkAndNotifyUpcomingPatches() to handle overdue and upcoming patches separately
