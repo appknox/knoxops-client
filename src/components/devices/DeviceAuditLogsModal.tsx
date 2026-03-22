@@ -67,9 +67,12 @@ const ActivityItem = ({ log }: { log: AuditLog }) => {
 
     switch (log.action) {
       case 'device_created': {
+        const status = (after?.status as string | null | undefined) || 'active';
         const assignedTo = (after?.assignedTo as string | null | undefined) || null;
         const purpose = (after?.purpose as string | null | undefined) || null;
+        const statusLabel_ = statusLabel[status] ?? status;
         const parts = ['Registered'];
+        if (statusLabel_ && statusLabel_ !== 'In Inventory') parts.push(`Status: ${statusLabel_}`);
         if (assignedTo) parts.push(`Assigned to: ${assignedTo}`);
         if (purpose) parts.push(`Purpose: ${purpose}`);
         return parts.join('. ');
