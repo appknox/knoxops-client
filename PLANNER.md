@@ -8510,7 +8510,7 @@ No backend change needed — `changes.after.assignedTo` and `changes.after.purpo
 
 # Plan: Device Activity Timeline — Complete Fix
 
-**STATUS:** PENDING
+**STATUS:** ❌ SUPERSEDED — replaced by "Unified Entity Comments + Device Activity Timeline (Full)" which covers all items here plus comments, filters, and pagination
 
 ## What Currently Works
 - `device_created` (Enrolled) — shows in timeline, user attribution works after route schema fix
@@ -8709,3 +8709,243 @@ Import `DeviceComment` from `@/types` — already defined.
 | `knoxadmin-client/src/components/devices/DeviceAuditLogsModal.tsx` | Fix enrolled description, add purpose_changed, merge comments |
 
 No new API endpoints needed — `GET /devices/:id/comments` already exists.
+
+---
+
+# Plan: Unified Entity Comments + Device Activity Timeline (Full)
+
+**STATUS:** PENDING
+
+## Background & Current State
+
+- `onprem_comments` table exists — used only for onprem deployments
+- `devicesApi.getComments / addComment / deleteComment` exist in the frontend but the **backend has no corresponding routes or DB table** — they would 404
+- Device audit logs exist and work
+- Onprem has a `getCombinedHistory` endpoint that merges comments + audit logs in one call
+
+---
+
+## Recommendation: Unified `entity_comments` Table
+
+Replace `onprem_comments` with a single `entity_comments` table shared across entity types, differentiated by `entity_type` enum. This avoids duplicating comment CRUD logic for every future entity.
+
+**Trade-offs:**
+- ✅ Single service, no duplication
+- ✅ Extensible (future: releases, users, etc.)
+- ⚠️ Requires migrating existing onprem comments data + updating onprem service references
+
+---
+
+## Phase 1 — Backend: New Schema
+
+### 1a. `knoxadmin/src/db/schema/entity-comments.ts` (new file)
+
+```ts
+import { pgTable, uuid, text, timestamp, boolean, pgEnum, index } from 'drizzle-orm/pg-core';
+import { users } from './users.js';
+
+export const commentEntityTypeEnum = pgEnum('comment_entity_type', [
+  'onprem_deployment',
+  'device',
+]);
+
+export const entityComments = pgTable(
+  'entity_comments',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    entityType: commentEntityTypeEnum('entity_type').notNull(),
+    entityId: uuid('entity_id').notNull(),
+    text: text('text').notNull(),
+    createdBy: uuid('created_by').references(() => users.id),
+    updatedBy: uuid('updated_by').references(() => users.id),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+    updatedAt: timestamp('updated_at').notNull().defaultNow(),
+    isDeleted: boolean('is_deleted').notNull().default(false),
+  },
+  (t) => [
+    index('entity_comments_entity_idx').on(t.entityType, t.entityId),
+    index('entity_comments_created_by_idx').on(t.createdBy),
+  ]
+);
+
+export type EntityComment = typeof entityComments.$inferSelect;
+export type NewEntityComment = typeof entityComments.$inferInsert;
+export type CommentEntityType = (typeof commentEntityTypeEnum.enumValues)[number];
+```
+
+Export from `src/db/schema/index.ts`.
+
+### 1b. Migration file: `drizzle/0010_entity_comments.sql`
+
+```sql
+-- Create new unified comments table
+CREATE TYPE "public"."comment_entity_type" AS ENUM('onprem_deployment', 'device');
+
+CREATE TABLE "entity_comments" (
+  "id" uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  "entity_type" "comment_entity_type" NOT NULL,
+  "entity_id" uuid NOT NULL,
+  "text" text NOT NULL,
+  "created_by" uuid REFERENCES "users"("id"),
+  "updated_by" uuid REFERENCES "users"("id"),
+  "created_at" timestamp NOT NULL DEFAULT now(),
+  "updated_at" timestamp NOT NULL DEFAULT now(),
+  "is_deleted" boolean NOT NULL DEFAULT false
+);
+
+CREATE INDEX "entity_comments_entity_idx" ON "entity_comments" ("entity_type", "entity_id");
+CREATE INDEX "entity_comments_created_by_idx" ON "entity_comments" ("created_by");
+
+-- Migrate existing onprem_comments into entity_comments
+INSERT INTO entity_comments (id, entity_type, entity_id, text, created_by, updated_by, created_at, updated_at, is_deleted)
+SELECT id, 'onprem_deployment', deployment_id, comment, created_by, updated_by, created_at, updated_at, is_deleted
+FROM onprem_comments;
+```
+
+---
+
+## Phase 2 — Backend: Shared Comment Service
+
+### 2a. `knoxadmin/src/services/entity-comments.service.ts` (new file)
+
+```ts
+export async function getComments(entityType, entityId, limit, offset)
+export async function countComments(entityType, entityId)
+export async function createComment(entityType, entityId, text, userId)
+export async function updateComment(commentId, text, userId)
+export async function deleteComment(commentId, userId)
+```
+
+All functions take `entityType: CommentEntityType` as the first param. Queries filter on `entityType + entityId + isDeleted = false`.
+
+Join users table on `createdBy` to return user info (firstName, lastName, email).
+
+### 2b. Update onprem service
+
+In `onprem.service.ts`, replace all calls to `onprem_comments` table with calls to the new `entity-comments.service.ts`, passing `entityType: 'onprem_deployment'`. The onprem routes and controller stay unchanged — only the service internals change.
+
+---
+
+## Phase 3 — Backend: Device History Endpoint
+
+### 3a. `knoxadmin/src/modules/devices/devices.routes.ts`
+
+Add `GET /devices/:id/history`:
+
+```
+Query params:
+  type:  'all' | 'comment' | 'activity'   (default: 'all')
+  page:  integer (default: 1)
+  limit: integer (default: 20, max: 50)
+```
+
+Response:
+```json
+{
+  "data": [
+    {
+      "id": "...",
+      "type": "comment | activity",
+      "timestamp": "2026-03-22T...",
+      "user": { "id", "firstName", "lastName", "email" },
+      "data": { ... }
+    }
+  ],
+  "pagination": { "page", "limit", "total", "totalPages" }
+}
+```
+
+**Pagination strategy** — combined sources make offset pagination tricky. Approach:
+
+- If `type = 'comment'` → paginate `entity_comments` directly
+- If `type = 'activity'` → paginate `audit_logs` directly
+- If `type = 'all'` → fetch `page * limit` from each source, merge-sort, slice, return count as `comment_count + activity_count`
+
+### 3b. Device comment CRUD routes (same file)
+
+```
+POST   /devices/:id/comments         → create comment
+PUT    /devices/:id/comments/:cid    → edit comment (owner only)
+DELETE /devices/:id/comments/:cid    → soft delete (owner only)
+```
+
+These simply call the shared `entity-comments.service.ts` with `entityType: 'device'`.
+
+---
+
+## Phase 4 — Frontend
+
+### 4a. `src/api/devices.ts`
+
+Replace the stub `getComments / addComment / deleteComment` with calls to the new history endpoint:
+
+```ts
+getHistory: (id, params?) → GET /devices/:id/history?type=...&page=...&limit=...
+addComment: (id, text)   → POST /devices/:id/comments
+updateComment: (id, cid, text) → PUT /devices/:id/comments/:cid
+deleteComment: (id, cid) → DELETE /devices/:id/comments/:cid
+```
+
+### 4b. `DeviceAuditLogsModal.tsx` — full rewrite
+
+**State:**
+```ts
+const [entries, setEntries]     = useState<HistoryEntry[]>([]);
+const [filter, setFilter]       = useState<'all' | 'comment' | 'activity'>('all');
+const [page, setPage]           = useState(1);
+const [totalPages, setTotal]    = useState(1);
+const [showAddComment, setShow] = useState(false);
+const [commentText, setText]    = useState('');
+```
+
+**Layout (mirrors DeploymentHistoryModal):**
+
+```
+┌─────────────────────────────────────────────────┐
+│ B003 — ipad              [+ Add Comment]        │
+├─────────────────────────────────────────────────┤
+│ [All] [Activity] [Comments]   ← filter tabs     │
+├─────────────────────────────────────────────────┤
+│ ▼ 2026-03-22 10:00   Comment           [edit][x]│
+│   "Device handed to tester"                     │
+│   avatar  Ginil Jose                            │
+│ ─────────────────────────────────────────────── │
+│ ▼ 2026-03-20 22:24   Status Changed             │
+│   In Inventory → Out for Repair                 │
+│   avatar  Ginil Jose                            │
+│ ─────────────────────────────────────────────── │
+│ ▼ 2026-03-20 03:57   Enrolled                   │
+│   Enrolled by: Ginil Jose                       │
+│   Assigned to: —  |  Purpose: —                 │
+│ ─────────────────────────────────────────────── │
+├─────────────────────────────────────────────────┤
+│  ← 1 / 3 →                          [Close]    │
+└─────────────────────────────────────────────────┘
+```
+
+**Activity entry rendering** — same icons/labels as current plan (PackageCheck, RefreshCw, UserCheck, Tag).
+
+**Comment entry rendering** — MessageSquare icon, comment text, edit (pencil) and delete (trash) buttons shown only to the comment's own author.
+
+**Add comment form** — collapses below the filter tabs when "+ Add Comment" is clicked. Textarea + Submit/Cancel buttons. On submit → `devicesApi.addComment()` → refresh page 1.
+
+**Filter tabs** — clicking changes `filter` param, resets to page 1, re-fetches.
+
+**Pagination** — prev/next buttons at the bottom, disabled when at bounds. Show `page / totalPages`.
+
+---
+
+## Summary of Files
+
+| File | Action |
+|---|---|
+| `knoxadmin/src/db/schema/entity-comments.ts` | **New** — unified comments schema |
+| `knoxadmin/drizzle/0010_entity_comments.sql` | **New** — migration + data migration from onprem_comments |
+| `knoxadmin/src/services/entity-comments.service.ts` | **New** — shared CRUD for all entity types |
+| `knoxadmin/src/modules/onprem/onprem.service.ts` | **Modify** — swap onprem_comments calls to entity-comments service |
+| `knoxadmin/src/modules/devices/devices.routes.ts` | **Modify** — add `/history` + comment CRUD routes |
+| `knoxadmin-client/src/api/devices.ts` | **Modify** — wire up real history + comment endpoints |
+| `knoxadmin-client/src/components/devices/DeviceAuditLogsModal.tsx` | **Rewrite** — filter tabs, add comment form, pagination |
+
+`onprem_comments` table can be dropped after verifying migration data integrity.
+

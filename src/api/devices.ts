@@ -74,7 +74,34 @@ export const devicesApi = {
     return response.data;
   },
 
+  updateComment: async (id: string, commentId: string, text: string): Promise<DeviceComment> => {
+    const response = await apiClient.put<DeviceComment>(`/devices/${id}/comments/${commentId}`, { text });
+    return response.data;
+  },
+
   deleteComment: async (deviceId: string, commentId: string): Promise<void> => {
     await apiClient.delete(`/devices/${deviceId}/comments/${commentId}`);
+  },
+
+  // History endpoint - merged comments + activities
+  getHistory: async (
+    id: string,
+    params?: {
+      type?: 'all' | 'comment' | 'activity';
+      page?: number;
+      limit?: number;
+    }
+  ): Promise<{
+    data: Array<{
+      id: string;
+      type: 'comment' | 'activity';
+      timestamp: string;
+      user?: { id: string; firstName: string; lastName: string; email: string } | null;
+      data: unknown;
+    }>;
+    pagination: { page: number; limit: number; total: number; totalPages: number };
+  }> => {
+    const response = await apiClient.get(`/devices/${id}/history`, { params });
+    return response.data;
   },
 };
