@@ -9244,6 +9244,7 @@ All go to `SLACK_DEVICE_WEBHOOK_URL`. Four events:
 ```
 📋 New Device Request — 22 March 2026
 
+*Request ID:* a1b2c3d4-e5f6-7890-abcd-ef1234567890
 Requested by:  Ginil Jose (ginil@appknox.com)
 Device type:   Mobile
 Platform:      Android
@@ -9255,6 +9256,8 @@ Status:        Pending
 **2. On approve:**
 ```
 ✅ Device Request Approved — 22 March 2026
+
+*Request ID:* a1b2c3d4-e5f6-7890-abcd-ef1234567890
 Requested by: Ginil Jose  |  Approved by: Admin Name
 Device: Android Mobile (Android 13)
 ```
@@ -9262,6 +9265,8 @@ Device: Android Mobile (Android 13)
 **3. On reject:**
 ```
 ❌ Device Request Rejected — 22 March 2026
+
+*Request ID:* a1b2c3d4-e5f6-7890-abcd-ef1234567890
 Requested by: Ginil Jose  |  Rejected by: Admin Name
 Reason: Device not currently available in inventory
 ```
@@ -9269,6 +9274,8 @@ Reason: Device not currently available in inventory
 **4. On complete:**
 ```
 📦 Device Request Completed — 22 March 2026
+
+*Request ID:* a1b2c3d4-e5f6-7890-abcd-ef1234567890
 Requested by: Ginil Jose  |  Completed by: Admin Name
 Device allocated: A003 — Pixel 7a
 ```
