@@ -31,7 +31,7 @@ const createDeviceSchema = z.object({
   purpose: z.string().optional(),
   status: z.enum(deviceStatuses),
   assignedTo: z.string().optional(),
-  comments: z.string().optional(),
+  description: z.string().optional(),
 });
 
 type CreateDeviceFormData = z.infer<typeof createDeviceSchema>;
@@ -191,6 +191,7 @@ const RegisterDevicePage = () => {
         // Operational fields as direct columns
         purpose: data.purpose?.trim() || undefined,
         assignedTo: data.assignedTo?.trim() || undefined,
+        description: data.description?.trim() || undefined,
         // Technical specs + network in metadata
         ...(Object.keys(metadata).length > 0 ? { metadata } : {}),
       });
@@ -336,16 +337,16 @@ const RegisterDevicePage = () => {
               </section>
             )}
 
-            {/* COMMENTS */}
+            {/* ADDITIONAL DETAILS */}
             <section>
               <h2 className="text-sm font-semibold text-primary-600 uppercase tracking-wide mb-4">
                 Additional Details
               </h2>
               <div className="grid grid-cols-1 gap-4">
                 <Textarea
-                  label="Comments"
-                  {...register('comments')}
-                  placeholder="Additional details or notes..."
+                  label="Description"
+                  {...register('description')}
+                  placeholder="Additional details or notes about the device..."
                   rows={3}
                 />
               </div>
