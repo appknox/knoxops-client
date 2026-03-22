@@ -25,9 +25,9 @@ const typeOptions = [
 const statusOptions = [
   { value: '', label: 'All Statuses' },
   { value: 'active', label: 'In Inventory' },
-  { value: 'maintenance', label: 'Out for Repair' },
-  { value: 'decommissioned', label: 'To Be Sold' },
-  { value: 'inactive', label: 'Not Verified' },
+  { value: 'inactive', label: 'Checked out of inventory' },
+  { value: 'maintenance', label: 'Out for repair' },
+  { value: 'decommissioned', label: 'To be sold' },
 ];
 
 const allocatedToOptions = [

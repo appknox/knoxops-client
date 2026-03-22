@@ -40,6 +40,21 @@ export const devicesApi = {
     return response.data;
   },
 
+  checkSerial: async (serialNumber: string, excludeId?: string): Promise<{
+    exists: boolean;
+    deviceId: string | null;
+    deviceName: string | null;
+  }> => {
+    const params = new URLSearchParams({ serialNumber });
+    if (excludeId) params.set('excludeId', excludeId);
+    const response = await apiClient.get<{
+      exists: boolean;
+      deviceId: string | null;
+      deviceName: string | null;
+    }>(`/devices/check-serial?${params}`);
+    return response.data;
+  },
+
   getAuditLogs: async (id: string, startDate?: string, endDate?: string): Promise<{ data: AuditLog[] }> => {
     const params: Record<string, string> = {};
     if (startDate) params.startDate = startDate;

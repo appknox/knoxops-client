@@ -1,11 +1,11 @@
-import { History, Pencil, Trash2, Monitor, Smartphone, Tablet } from 'lucide-react';
+import { MessageSquare, Pencil, Trash2, Monitor, Smartphone, Tablet } from 'lucide-react';
 import { Avatar, Pagination } from '@/components/ui';
 import { DeviceStatusBadge } from './DeviceStatusBadge';
 import { usePermissions } from '@/hooks/usePermissions';
 import type { DeviceListItem } from '@/types';
 
 // Platform icon component
-const PlatformIcon = ({ platform }: { platform: string | null }) => {
+const PlatformIcon = ({ platform, type }: { platform: string | null; type?: string }) => {
   const platformLower = platform?.toLowerCase();
 
   if (platformLower === 'ios') {
@@ -30,7 +30,25 @@ const PlatformIcon = ({ platform }: { platform: string | null }) => {
     );
   }
 
-  // Default device icon for other platforms
+  // Fallback to type-based icons when platform is not set
+  const typeLower = type?.toLowerCase();
+  if (typeLower === 'mobile') {
+    return (
+      <div className="w-8 h-8 bg-blue-50 rounded-lg flex items-center justify-center">
+        <Smartphone className="h-4 w-4 text-blue-600" />
+      </div>
+    );
+  }
+
+  if (typeLower === 'tablet') {
+    return (
+      <div className="w-8 h-8 bg-purple-50 rounded-lg flex items-center justify-center">
+        <Tablet className="h-4 w-4 text-purple-600" />
+      </div>
+    );
+  }
+
+  // Default device icon for other platforms/types
   return (
     <div className="w-8 h-8 bg-red-100 rounded-lg flex items-center justify-center">
       <Monitor className="h-4 w-4 text-red-600" />
@@ -116,7 +134,7 @@ const DeviceTable = ({
               <tr key={device.id} className="hover:bg-gray-50">
                 <td className="px-6 py-4 whitespace-nowrap">
                   <div className="flex items-center gap-3">
-                    <PlatformIcon platform={device.platform} />
+                    <PlatformIcon platform={device.platform} type={device.type} />
                     <span className="font-medium text-gray-900">{device.name}</span>
                   </div>
                 </td>
@@ -143,10 +161,10 @@ const DeviceTable = ({
                   <div className="flex items-center justify-end gap-2">
                     <button
                       onClick={() => onViewHistory(device)}
-                      className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
-                      title="View History"
+                      className="p-1.5 text-purple-600 hover:bg-purple-50 rounded-lg transition-colors"
+                      title="Activity & History"
                     >
-                      <History className="h-4 w-4" />
+                      <MessageSquare className="h-4 w-4" />
                     </button>
                     <button
                       onClick={canManageDevices ? () => onEdit(device) : undefined}
