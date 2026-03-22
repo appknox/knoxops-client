@@ -57,7 +57,7 @@ const ActivityItem = ({ log }: { log: AuditLog }) => {
 
   const userName = log.user ? `${log.user.firstName} ${log.user.lastName}` : 'System';
 
-  const description = (() => {
+  const getDescription = () => {
     const changes = log.changes as {
       before?: Record<string, unknown>;
       after?: Record<string, unknown>;
@@ -71,33 +71,52 @@ const ActivityItem = ({ log }: { log: AuditLog }) => {
         const assignedTo = (after?.assignedTo as string | null | undefined) || null;
         const purpose = (after?.purpose as string | null | undefined) || null;
         const statusLabel_ = statusLabel[status] ?? status;
-        const parts = ['Registered'];
-        if (statusLabel_ && statusLabel_ !== 'In Inventory') parts.push(`Status: ${statusLabel_}`);
-        if (assignedTo) parts.push(`Assigned to: ${assignedTo}`);
-        if (purpose) parts.push(`Purpose: ${purpose}`);
-        return parts.join('. ');
+        const parts: JSX.Element[] = [];
+        if (statusLabel_ && statusLabel_ !== 'In Inventory') parts.push(<span key="status"><span className="font-semibold">Status:</span> {statusLabel_}</span>);
+        if (assignedTo) parts.push(<span key="assigned"><span className="font-semibold">Assigned to:</span> {assignedTo}</span>);
+        if (purpose) parts.push(<span key="purpose"><span className="font-semibold">Purpose:</span> {purpose}</span>);
+        return (
+          <div>
+            <div>Registered</div>
+            {parts.length > 0 && <div className="mt-1">{parts.map((part, idx) => <div key={idx}>{part}</div>)}</div>}
+          </div>
+        );
       }
       case 'status_changed': {
         const beforeStatus = (before?.status as string | null | undefined) ?? 'Unknown';
         const afterStatus = (after?.status as string | null | undefined) ?? 'Unknown';
         const beforeLabel = statusLabel[beforeStatus] ?? beforeStatus;
         const afterLabel = statusLabel[afterStatus] ?? afterStatus;
-        return `Status: ${beforeLabel} → ${afterLabel}`;
+        return (
+          <div>
+            <span className="font-semibold">Status:</span> {beforeLabel} → {afterLabel}
+          </div>
+        );
       }
       case 'assigned_to_changed': {
         const beforeName = (before?.assignedTo as string | null | undefined) ?? '—';
         const afterName = (after?.assignedTo as string | null | undefined) ?? '—';
-        return `Assigned to: ${beforeName} → ${afterName}`;
+        return (
+          <div>
+            <span className="font-semibold">Assigned to:</span> {beforeName} → {afterName}
+          </div>
+        );
       }
       case 'purpose_changed': {
         const beforePurpose = (before?.purpose as string | null | undefined) ?? '—';
         const afterPurpose = (after?.purpose as string | null | undefined) ?? '—';
-        return `Purpose: ${beforePurpose} → ${afterPurpose}`;
+        return (
+          <div>
+            <span className="font-semibold">Purpose:</span> {beforePurpose} → {afterPurpose}
+          </div>
+        );
       }
       default:
-        return log.action;
+        return <div>{log.action}</div>;
     }
-  })();
+  };
+
+  const description = getDescription();
 
   return (
     <div className="flex gap-3 py-4 border-b last:border-0">
@@ -107,7 +126,7 @@ const ActivityItem = ({ log }: { log: AuditLog }) => {
           <span className="font-medium text-sm">{config.label}</span>
           <span className="text-xs text-gray-400">{formatDateTime(log.createdAt)}</span>
         </div>
-        <p className="text-sm text-gray-600 mt-0.5">{description}</p>
+        <div className="text-sm text-gray-600 mt-0.5">{description}</div>
         <div className="flex items-center gap-1.5 mt-1.5">
           <Avatar name={userName} size="xs" />
           <span className="text-xs text-gray-500">{userName}</span>
