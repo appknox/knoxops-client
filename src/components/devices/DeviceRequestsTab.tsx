@@ -205,18 +205,22 @@ export function DeviceRequestsTab() {
           requestId={completingRequestId}
         />
       )}
-      {rejectionDetailsRequestId && (
-        <RejectionDetailsModal
-          isOpen={!!rejectionDetailsRequestId}
-          onClose={() => setRejectionDetailsRequestId(null)}
-          request={requests.find((r) => r.id === rejectionDetailsRequestId) || null}
-          rejectedByUserName={
-            requests.find((r) => r.id === rejectionDetailsRequestId)?.rejectedBy
-              ? `Unknown User`
-              : undefined
-          }
-        />
-      )}
+      {rejectionDetailsRequestId && (() => {
+        const rejectionRequest = requests.find((r) => r.id === rejectionDetailsRequestId);
+        const rejectedByUser = rejectionRequest?.rejectedByUser;
+        const rejectedByUserName = rejectedByUser
+          ? `${rejectedByUser.firstName} ${rejectedByUser.lastName}`
+          : undefined;
+
+        return (
+          <RejectionDetailsModal
+            isOpen={!!rejectionDetailsRequestId}
+            onClose={() => setRejectionDetailsRequestId(null)}
+            request={rejectionRequest || null}
+            rejectedByUserName={rejectedByUserName}
+          />
+        );
+      })()}
     </>
   );
 }

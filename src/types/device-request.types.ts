@@ -17,13 +17,28 @@ export interface DeviceRequest {
   rejectionReason?: string | null;
   linkedDeviceId?: string | null;
   approvedBy?: string | null;
-  approvedByUser?: any | null;
+  approvedByUser?: {
+    id: string;
+    firstName: string;
+    lastName: string;
+    email: string;
+  } | null;
   approvedAt?: string | null;
   rejectedBy?: string | null;
-  rejectedByUser?: any | null;
+  rejectedByUser?: {
+    id: string;
+    firstName: string;
+    lastName: string;
+    email: string;
+  } | null;
   rejectedAt?: string | null;
   completedBy?: string | null;
-  completedByUser?: any | null;
+  completedByUser?: {
+    id: string;
+    firstName: string;
+    lastName: string;
+    email: string;
+  } | null;
   completedAt?: string | null;
   createdAt: string;
   updatedAt: string;
