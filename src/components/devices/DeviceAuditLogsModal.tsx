@@ -3,6 +3,7 @@ import { History, PackageCheck, RefreshCw, UserCheck, Tag, MessageSquare, Pencil
 import { Modal, Button, Avatar, Textarea } from '@/components/ui';
 import { devicesApi } from '@/api';
 import { formatDateTime } from '@/utils/formatters';
+import { useAuthStore } from '@/stores';
 import type { DeviceListItem } from '@/types';
 
 interface HistoryEntry {
@@ -63,7 +64,7 @@ const actionConfig: Record<
   },
 };
 
-const ActivityEntry = ({ entry, currentUserId }: { entry: HistoryEntry; currentUserId?: string }) => {
+const ActivityEntry = ({ entry }: { entry: HistoryEntry }) => {
   const action = entry.data.action;
   const config = actionConfig[action];
   if (!config) return null;
@@ -220,6 +221,7 @@ const CommentEntry = ({
 };
 
 const DeviceAuditLogsModal = ({ isOpen, onClose, device }: DeviceAuditLogsModalProps) => {
+  const { user } = useAuthStore();
   const [entries, setEntries] = useState<HistoryEntry[]>([]);
   const [filter, setFilter] = useState<'all' | 'comment' | 'activity'>('all');
   const [page, setPage] = useState(1);
@@ -227,7 +229,6 @@ const DeviceAuditLogsModal = ({ isOpen, onClose, device }: DeviceAuditLogsModalP
   const [isLoading, setIsLoading] = useState(false);
   const [showAddComment, setShowAddComment] = useState(false);
   const [newComment, setNewComment] = useState('');
-  const [currentUserId, setCurrentUserId] = useState<string | undefined>();
 
   const fetchHistory = async (pageNum: number = 1) => {
     if (!device) return;
@@ -251,16 +252,6 @@ const DeviceAuditLogsModal = ({ isOpen, onClose, device }: DeviceAuditLogsModalP
   useEffect(() => {
     if (isOpen && device) {
       fetchHistory();
-      // Get current user ID from localStorage or session (assuming it's stored during login)
-      const userStr = localStorage.getItem('user');
-      if (userStr) {
-        try {
-          const user = JSON.parse(userStr);
-          setCurrentUserId(user.id);
-        } catch {
-          // Error parsing user
-        }
-      }
     }
   }, [isOpen, device]);
 
@@ -362,12 +353,12 @@ const DeviceAuditLogsModal = ({ isOpen, onClose, device }: DeviceAuditLogsModalP
           <div className="px-6 py-4">
             {entries.map((entry) =>
               entry.type === 'activity' ? (
-                <ActivityEntry key={entry.id} entry={entry} currentUserId={currentUserId} />
+                <ActivityEntry key={entry.id} entry={entry} />
               ) : (
                 <CommentEntry
                   key={entry.id}
                   entry={entry}
-                  currentUserId={currentUserId}
+                  currentUserId={user?.id}
                   onEdit={handleEditComment}
                   onDelete={handleDeleteComment}
                 />
