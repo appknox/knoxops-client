@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { History, PackageCheck, RefreshCw, UserCheck } from 'lucide-react';
+import { History, PackageCheck, RefreshCw, UserCheck, Tag } from 'lucide-react';
 import { Modal, Button, Avatar } from '@/components/ui';
 import { devicesApi } from '@/api';
 import { formatDateTime } from '@/utils/formatters';
@@ -44,6 +44,11 @@ const actionConfig: Record<
     label: 'Reassigned',
     bgColor: 'bg-purple-100',
   },
+  purpose_changed: {
+    icon: <Tag className="h-5 w-5 text-orange-600" />,
+    label: 'Purpose Changed',
+    bgColor: 'bg-orange-100',
+  },
 };
 
 const ActivityItem = ({ log }: { log: AuditLog }) => {
@@ -80,6 +85,11 @@ const ActivityItem = ({ log }: { log: AuditLog }) => {
         const beforeName = (before?.assignedTo as string | null | undefined) ?? '—';
         const afterName = (after?.assignedTo as string | null | undefined) ?? '—';
         return `Assigned to: ${beforeName} → ${afterName}`;
+      }
+      case 'purpose_changed': {
+        const beforePurpose = (before?.purpose as string | null | undefined) ?? '—';
+        const afterPurpose = (after?.purpose as string | null | undefined) ?? '—';
+        return `Purpose: ${beforePurpose} → ${afterPurpose}`;
       }
       default:
         return log.action;
