@@ -268,6 +268,30 @@ const RegisterDevicePage = () => {
               </div>
             </section>
 
+            {/* DEVICE STATUS & ASSIGNMENT */}
+            <section>
+              <h2 className="text-sm font-semibold text-primary-600 uppercase tracking-wide mb-4">
+                Device Status & Assignment
+              </h2>
+              <div className="grid grid-cols-3 gap-4">
+                <Select
+                  label="Inventory Status"
+                  options={statusOptions}
+                  {...register('status')}
+                />
+                <Select
+                  label="Purpose"
+                  options={purposeOptions}
+                  {...register('purpose')}
+                />
+                <Input
+                  label="Assigned To"
+                  {...register('assignedTo')}
+                  placeholder="Person name..."
+                />
+              </div>
+            </section>
+
             {/* TECHNICAL SPECS — only for mobile/workstation/tablet */}
             {showTechSpecs && (
               <section>
@@ -312,32 +336,12 @@ const RegisterDevicePage = () => {
               </section>
             )}
 
-            {/* STATUS & PURPOSE */}
+            {/* COMMENTS */}
             <section>
               <h2 className="text-sm font-semibold text-primary-600 uppercase tracking-wide mb-4">
-                Status & Purpose
-              </h2>
-              <div className="grid grid-cols-2 gap-4">
-                <Select label="Purpose / Status" options={purposeOptions} {...register('purpose')} />
-                <Select
-                  label="Inventory Status"
-                  options={statusOptions}
-                  {...register('status')}
-                />
-              </div>
-            </section>
-
-            {/* VERIFICATION & ASSIGNMENT */}
-            <section>
-              <h2 className="text-sm font-semibold text-primary-600 uppercase tracking-wide mb-4">
-                Assignment
+                Additional Details
               </h2>
               <div className="grid grid-cols-1 gap-4">
-                <Input
-                  label="Assigned To"
-                  {...register('assignedTo')}
-                  placeholder="Search user..."
-                />
                 <Textarea
                   label="Comments"
                   {...register('comments')}
