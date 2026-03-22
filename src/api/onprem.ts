@@ -241,9 +241,13 @@ export const onpremApi = {
     await apiClient.delete(`/onprem/${deploymentId}/comments/${commentId}`);
   },
 
-  getCombinedHistory: async (deploymentId: string): Promise<CombinedHistoryResponse> => {
+  getCombinedHistory: async (
+    deploymentId: string,
+    params?: { type?: string; page?: number; limit?: number }
+  ): Promise<CombinedHistoryResponse> => {
     const response = await apiClient.get<CombinedHistoryResponse>(
-      `/onprem/${deploymentId}/combined-history`
+      `/onprem/${deploymentId}/combined-history`,
+      { params }
     );
     return response.data;
   },

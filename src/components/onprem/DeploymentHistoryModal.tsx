@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Modal, Button, Textarea } from '@/components/ui';
 import { useOnpremStore } from '@/stores';
 import { useAuthStore } from '@/stores';
+import { onpremApi } from '@/api';
 import { MessageSquare, FileText, Activity, Plus, Edit2, Trash2, X, Check } from 'lucide-react';
 import type { OnpremDeployment, CombinedHistoryEntry } from '@/types';
 
@@ -21,9 +22,15 @@ const formatDate = (dateString: string) => {
   });
 };
 
+const LIMIT = 20;
+
 const DeploymentHistoryModal = ({ isOpen, onClose, deployment }: DeploymentHistoryModalProps) => {
-  const { combinedHistory, combinedHistoryLoading, fetchCombinedHistory, createComment, updateComment, deleteComment } = useOnpremStore();
+  const { createComment, updateComment, deleteComment } = useOnpremStore();
   const { user } = useAuthStore();
+  const [entries, setEntries] = useState<CombinedHistoryEntry[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
   const [showAddForm, setShowAddForm] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [newComment, setNewComment] = useState('');
@@ -32,11 +39,35 @@ const DeploymentHistoryModal = ({ isOpen, onClose, deployment }: DeploymentHisto
   const [expandedComments, setExpandedComments] = useState<Set<string>>(new Set());
   const [filter, setFilter] = useState<'all' | 'comments' | 'activities'>('all');
 
+  const fetchHistory = async (pageNum: number = 1, filterOverride?: typeof filter) => {
+    if (!deployment || !isOpen) return;
+    const activeFilter = filterOverride ?? filter;
+    setIsLoading(true);
+    try {
+      const response = await onpremApi.getCombinedHistory(deployment.id, {
+        type: activeFilter,
+        page: pageNum,
+        limit: LIMIT,
+      });
+      setEntries(response.data);
+      setTotalPages(response.pagination.totalPages);
+      setPage(pageNum);
+    } catch {
+      // handled
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   useEffect(() => {
     if (isOpen && deployment) {
-      fetchCombinedHistory(deployment.id);
+      fetchHistory(1, filter);
+    } else {
+      setEntries([]);
+      setPage(1);
+      setTotalPages(1);
     }
-  }, [isOpen, deployment, fetchCombinedHistory]);
+  }, [isOpen, deployment, filter]);
 
   const handleSubmitComment = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -47,6 +78,7 @@ const DeploymentHistoryModal = ({ isOpen, onClose, deployment }: DeploymentHisto
       await createComment(deployment.id, { comment: newComment.trim() });
       setNewComment('');
       setShowAddForm(false);
+      fetchHistory(1, filter);
     } catch (error) {
       console.error('Failed to add comment:', error);
       alert('Failed to add comment. Please try again.');
@@ -68,6 +100,7 @@ const DeploymentHistoryModal = ({ isOpen, onClose, deployment }: DeploymentHisto
       await updateComment(deployment.id, commentId, { comment: editingCommentText.trim() });
       setEditingCommentId(null);
       setEditingCommentText('');
+      fetchHistory(page, filter);
     } catch (error) {
       console.error('Failed to update comment:', error);
     } finally {
@@ -86,6 +119,7 @@ const DeploymentHistoryModal = ({ isOpen, onClose, deployment }: DeploymentHisto
 
     try {
       await deleteComment(deployment.id, commentId);
+      fetchHistory(page, filter);
     } catch (error) {
       console.error('Failed to delete comment:', error);
     }
@@ -431,47 +465,26 @@ const DeploymentHistoryModal = ({ isOpen, onClose, deployment }: DeploymentHisto
 
         {/* Combined History Timeline */}
         <div className="mx-4 border border-gray-200 rounded-lg divide-y divide-gray-200 max-h-[500px] overflow-y-auto">
-          {combinedHistoryLoading ? (
+          {isLoading ? (
             <div className="p-8 text-center">
               <div className="animate-pulse">
                 <div className="h-4 bg-gray-200 rounded w-1/4 mx-auto mb-4" />
                 <div className="h-4 bg-gray-200 rounded w-1/2 mx-auto" />
               </div>
             </div>
-          ) : !combinedHistory || combinedHistory.length === 0 ? (
+          ) : entries.length === 0 ? (
             <div className="p-8 text-center">
               <MessageSquare className="h-12 w-12 text-gray-300 mx-auto mb-4" />
-              <h3 className="text-lg font-medium text-gray-900 mb-1">No activity yet</h3>
-              <p className="text-gray-500">Add a comment to start tracking activity.</p>
+              <h3 className="text-lg font-medium text-gray-900 mb-1">
+                No {filter !== 'all' ? filter : 'activity'} yet
+              </h3>
+              <p className="text-gray-500">
+                {filter === 'comments' ? 'Add a comment to start the conversation.' : 'No activity recorded yet.'}
+              </p>
             </div>
-          ) : (() => {
-              const filteredHistory = combinedHistory.filter((entry) => {
-                if (filter === 'comments') return entry.type === 'comment';
-                if (filter === 'activities') return entry.type !== 'comment';
-                return true; // 'all'
-              });
-
-              if (filteredHistory.length === 0) {
-                return (
-                  <div className="p-8 text-center">
-                    <MessageSquare className="h-12 w-12 text-gray-300 mx-auto mb-4" />
-                    <h3 className="text-lg font-medium text-gray-900 mb-1">
-                      No {filter === 'comments' ? 'comments' : 'activities'} yet
-                    </h3>
-                    <p className="text-gray-500">
-                      {filter === 'comments'
-                        ? 'Add a comment to start the conversation.'
-                        : 'No activity recorded yet.'}
-                    </p>
-                  </div>
-                );
-              }
-
-              return filteredHistory.map((entry) => {
-              if (!entry || !entry.id || !entry.type) {
-                console.error('Invalid entry:', entry);
-                return null;
-              }
+          ) : (
+            entries.map((entry) => {
+              if (!entry || !entry.id || !entry.type) return null;
               return (
                 <div key={`${entry.type}-${entry.id}`} className="p-4 hover:bg-gray-50">
                   <div className="flex items-start gap-3">
@@ -488,12 +501,31 @@ const DeploymentHistoryModal = ({ isOpen, onClose, deployment }: DeploymentHisto
                   </div>
                 </div>
               );
-            });
-          })()}
+            })
+          )}
         </div>
 
-        {/* Footer */}
-        <div className="flex justify-end pt-4 px-4">
+        {/* Pagination + Footer */}
+        <div className="flex items-center justify-between pt-4 px-4">
+          <div className="flex items-center gap-3">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => fetchHistory(page - 1, filter)}
+              disabled={page === 1 || isLoading}
+            >
+              ← Prev
+            </Button>
+            <span className="text-sm text-gray-500">{page} / {totalPages || 1}</span>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => fetchHistory(page + 1, filter)}
+              disabled={page >= totalPages || isLoading}
+            >
+              Next →
+            </Button>
+          </div>
           <Button variant="outline" onClick={onClose}>
             Close
           </Button>

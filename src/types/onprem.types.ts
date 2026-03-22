@@ -333,6 +333,12 @@ export interface CombinedHistoryEntry {
 
 export interface CombinedHistoryResponse {
   data: CombinedHistoryEntry[];
+  pagination: {
+    page: number;
+    limit: number;
+    total: number;
+    totalPages: number;
+  };
 }
 
 // Document types

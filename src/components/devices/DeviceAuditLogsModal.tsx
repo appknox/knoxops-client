@@ -230,12 +230,13 @@ const DeviceAuditLogsModal = ({ isOpen, onClose, device }: DeviceAuditLogsModalP
   const [showAddComment, setShowAddComment] = useState(false);
   const [newComment, setNewComment] = useState('');
 
-  const fetchHistory = async (pageNum: number = 1) => {
-    if (!device) return;
+  const fetchHistory = async (pageNum: number = 1, filterOverride?: typeof filter) => {
+    if (!device || !isOpen) return;
+    const activeFilter = filterOverride ?? filter;
     setIsLoading(true);
     try {
       const response = await devicesApi.getHistory(device.id, {
-        type: filter,
+        type: activeFilter,
         page: pageNum,
         limit: 20,
       });
@@ -251,14 +252,13 @@ const DeviceAuditLogsModal = ({ isOpen, onClose, device }: DeviceAuditLogsModalP
 
   useEffect(() => {
     if (isOpen && device) {
-      fetchHistory();
+      fetchHistory(1, filter);
+    } else {
+      setEntries([]);
+      setPage(1);
+      setTotalPages(1);
     }
-  }, [isOpen, device]);
-
-  useEffect(() => {
-    setPage(1);
-    fetchHistory(1);
-  }, [filter]);
+  }, [isOpen, device, filter]);
 
   const handleAddComment = async () => {
     if (!device || !newComment.trim()) return;
@@ -266,7 +266,7 @@ const DeviceAuditLogsModal = ({ isOpen, onClose, device }: DeviceAuditLogsModalP
       await devicesApi.addComment(device.id, newComment);
       setNewComment('');
       setShowAddComment(false);
-      fetchHistory(1);
+      fetchHistory(1, filter);
     } catch {
       // Error handled
     }
@@ -276,7 +276,7 @@ const DeviceAuditLogsModal = ({ isOpen, onClose, device }: DeviceAuditLogsModalP
     if (!device) return;
     try {
       await devicesApi.updateComment(device.id, commentId, text);
-      fetchHistory(page);
+      fetchHistory(page, filter);
     } catch {
       // Error handled
     }
@@ -286,7 +286,7 @@ const DeviceAuditLogsModal = ({ isOpen, onClose, device }: DeviceAuditLogsModalP
     if (!device || !window.confirm('Delete this comment?')) return;
     try {
       await devicesApi.deleteComment(device.id, commentId);
-      fetchHistory(page);
+      fetchHistory(page, filter);
     } catch {
       // Error handled
     }
@@ -373,7 +373,7 @@ const DeviceAuditLogsModal = ({ isOpen, onClose, device }: DeviceAuditLogsModalP
           <Button
             variant="outline"
             size="sm"
-            onClick={() => fetchHistory(page - 1)}
+            onClick={() => fetchHistory(page - 1, filter)}
             disabled={page === 1}
           >
             ← Prev
@@ -384,7 +384,7 @@ const DeviceAuditLogsModal = ({ isOpen, onClose, device }: DeviceAuditLogsModalP
           <Button
             variant="outline"
             size="sm"
-            onClick={() => fetchHistory(page + 1)}
+            onClick={() => fetchHistory(page + 1, filter)}
             disabled={page === totalPages}
           >
             Next →

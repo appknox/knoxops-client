@@ -104,4 +104,12 @@ export const devicesApi = {
     const response = await apiClient.get(`/devices/${id}/history`, { params });
     return response.data;
   },
+
+  // Get distinct OS versions for a platform
+  getDistinctOsVersions: async (platform: 'iOS' | 'Android'): Promise<string[]> => {
+    const response = await apiClient.get<{ versions: string[] }>('/devices/distinct-os-versions', {
+      params: { platform },
+    });
+    return response.data.versions;
+  },
 };

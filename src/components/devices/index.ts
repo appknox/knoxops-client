@@ -6,3 +6,8 @@ export { EditDeviceModal } from './EditDeviceModal';
 export { DeleteDeviceDialog } from './DeleteDeviceDialog';
 export { DeviceAuditLogsModal } from './DeviceAuditLogsModal';
 export { FetchDeviceWizard } from './FetchDeviceWizard';
+export { RequestDeviceModal } from './RequestDeviceModal';
+export { RejectRequestModal } from './RejectRequestModal';
+export { CompleteRequestModal } from './CompleteRequestModal';
+export { DeviceRequestsTab } from './DeviceRequestsTab';
+export { RequestStatusBadge } from './RequestStatusBadge';

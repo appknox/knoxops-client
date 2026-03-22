@@ -8998,3 +8998,563 @@ const [commentText, setText]    = useState('');
 - Update onprem service to use entity-comments service
 - Drop onprem_comments table after verifying migration
 
+
+---
+
+# Plan: Device Activity Timeline & On-Prem History Pagination
+
+**STATUS:** ✅ COMPLETED (2026-03-22)
+
+## Summary
+
+Enhanced device and on-prem deployment history modals with pagination, filter tabs, and unified comment/activity timelines.
+
+### Devices: History Endpoint & Modal Rewrite
+
+**Backend:**
+- Implemented `GET /devices/:id/history?type=all|comment|activity&page=1&limit=20` endpoint
+- Merged audit logs + entity comments into single timeline
+- Fixed double-pagination bug in `getHistory` controller
+- Backend fetches all items without offset, sorts by timestamp, then paginates result set
+
+**Frontend:**
+- Rewrote `DeviceAuditLogsModal.tsx` with local paginated state
+- Added filter tabs: All / Activity / Comments
+- Pagination: prev/next buttons, page indicator
+- Comment add form (collapsible)
+- Edit/delete buttons for comment authors only
+- Activity icons: enrolled (PackageCheck), status changed (RefreshCw), reassigned (UserCheck), purpose changed (Tag)
+
+### On-Prem: Combined History Pagination
+
+**Backend:**
+- Enhanced `getCombinedHistory(deploymentId, { type, page, limit })` to accept pagination params
+- Supports filter types: 'all' | 'comments' | 'activities'
+- Returns paginated response with `{ data, pagination: { page, limit, total, totalPages } }`
+- Updated route schema to expose query params and pagination response
+
+**Frontend:**
+- Refactored `DeploymentHistoryModal.tsx` with local paginated state (mirrors device modal pattern)
+- Added pagination controls (prev/next, page indicator)
+- Filter tabs work correctly with pagination
+- Limit: 20 per page for both devices and on-prem
+
+### Bug Fixes
+
+1. **Entity Comments Migration** — Applied `0010_entity_comments.sql` migration directly via psql (was pending in journal)
+2. **Device History Pagination** — Fixed double-offset application in `getHistory` when filtering by type
+3. **Comment Tab Showing Activities** — Resolved stale closure issue in modal's useEffect; merged multiple effects into single effect with proper filter dependency
+4. **Backend Module Load Failure** — Moved duplicate imports to top of `devices.controller.ts` (imports were mid-file after function definitions)
+
+### Files Modified
+
+| File | Changes |
+|---|---|
+| `knoxadmin/src/modules/devices/devices.controller.ts` | Moved imports to top, fixed pagination logic in getHistory |
+| `knoxadmin/src/modules/onprem/onprem.service.ts` | Enhanced getCombinedHistory with pagination + filter params |
+| `knoxadmin/src/modules/onprem/onprem.controller.ts` | Updated getCombinedDeploymentHistory to accept and pass pagination params |
+| `knoxadmin/src/modules/onprem/onprem.routes.ts` | Updated route schema with querystring params + pagination response |
+| `knoxadmin/drizzle/meta/_journal.json` | Added migration journal entries for 0008-0010 migrations |
+| `knoxadmin-client/src/types/onprem.types.ts` | Updated CombinedHistoryResponse to include pagination object |
+| `knoxadmin-client/src/api/onprem.ts` | Enhanced getCombinedHistory to accept optional params |
+| `knoxadmin-client/src/components/onprem/DeploymentHistoryModal.tsx` | Refactored with local paginated state, pagination controls, filter integration |
+| `knoxadmin-client/src/components/devices/DeviceAuditLogsModal.tsx` | Set pagination limit to 20, fixed filter dependency in useEffect |
+
+### Testing
+
+- Devices: History modal loads with pagination, filters work correctly, comment CRUD operates, activities display properly
+- On-Prem: Combined history pagination at 20 per page, filter tabs functional, comment operations working
+
+---
+
+# Plan: Device Request Feature
+
+**STATUS:** ✅ COMPLETED (2026-03-22)
+
+## Summary
+
+Implemented full device request workflow allowing users to request devices, with admin approval/rejection/completion. Includes frontend UI with modals, status tracking, Slack notifications, and role-based access control.
+
+### Backend
+- ✅ Created `device-requests` schema with pgEnum status and all audit fields
+- ✅ Migration `0011_device_requests.sql` creates table + indices
+- ✅ Service layer with CRUD + status transition logic (all in `device-requests.service.ts`)
+- ✅ Controller with request handlers and validation
+- ✅ Routes with 6 endpoints: POST create, GET list/getById, PATCH approve/reject/complete
+- ✅ Registered routes at `/api/device-requests`
+- ✅ Slack notifications for all 4 events (submit, approve, reject, complete)
+
+### Frontend
+- ✅ Types: `DeviceRequest`, `CreateDeviceRequestInput`, `ListDeviceRequestsResponse`
+- ✅ API module: `deviceRequestsApi` with all 6 methods
+- ✅ Zustand store: `useDeviceRequestStore` with state management
+- ✅ 5 Components:
+  - `RequestDeviceModal.tsx` - Form with dynamic platform selection
+  - `RejectRequestModal.tsx` - Rejection reason input
+  - `CompleteRequestModal.tsx` - Device search + selection
+  - `DeviceRequestsTab.tsx` - Table with pagination + action buttons
+  - `RequestStatusBadge.tsx` - Status badge with icons
+- ✅ Updated `DeviceListPage.tsx` with tabs (Inventory / Requests)
+- ✅ "Request a Device" button in header
+- ✅ Role-based UI (admin sees all, read-only sees own)
+
+### Testing
+- Migration applied successfully
+- No TypeScript compilation errors in device-requests module
+- All components properly exported and integrated
+- Slack messaging integrated with Block Kit format
+
+---
+
+## Overview
+
+Any user with device read or write access can request a device from the listing page. Admins and write-access users manage all requests. Read-only users see only their own. Slack notified on submit and every status change.
+
+---
+
+## Status Flow
+
+```
+pending  → approved  → completed (linked to device)
+pending  → rejected  (with reason — free text, required)
+approved → rejected  (admin changes mind — with reason, free text, required)
+```
+
+### Allowed transitions (enforced in service)
+
+| From | To | Allowed |
+|---|---|---|
+| pending | approved | ✅ |
+| pending | rejected | ✅ reason required |
+| approved | completed | ✅ |
+| approved | rejected | ✅ reason required |
+| rejected | * | ❌ terminal state |
+| completed | * | ❌ terminal state |
+
+`RejectRequestModal` is reused for both `pending → rejected` and `approved → rejected`. Always requires a non-empty reason before submit.
+
+---
+
+## DB Schema
+
+### New table: `device_requests`
+
+```sql
+CREATE TYPE device_request_status AS ENUM ('pending', 'approved', 'rejected', 'completed');
+
+CREATE TABLE device_requests (
+  id                uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  requested_by      uuid NOT NULL REFERENCES users(id),
+  device_type       varchar(50) NOT NULL,        -- mobile | tablet | charging_hub
+  platform          varchar(50) NOT NULL,        -- iOS | Android | Cambrionix
+  os_version        varchar(50),                 -- nullable, only mobile/tablet
+  purpose           text NOT NULL,
+  status            device_request_status NOT NULL DEFAULT 'pending',
+  rejection_reason  text,                        -- set on reject
+  linked_device_id  uuid REFERENCES devices(id), -- set on complete
+  approved_by       uuid REFERENCES users(id),
+  approved_at       timestamp,
+  rejected_by       uuid REFERENCES users(id),
+  rejected_at       timestamp,
+  completed_by      uuid REFERENCES users(id),
+  completed_at      timestamp,
+  created_at        timestamp NOT NULL DEFAULT now(),
+  updated_at        timestamp NOT NULL DEFAULT now()
+);
+
+CREATE INDEX device_requests_requested_by_idx ON device_requests(requested_by);
+CREATE INDEX device_requests_status_idx ON device_requests(status);
+```
+
+### Drizzle schema: `src/db/schema/device-requests.ts` (new file)
+
+```ts
+export const deviceRequestStatusEnum = pgEnum('device_request_status', [
+  'pending', 'approved', 'rejected', 'completed',
+]);
+
+export const deviceRequests = pgTable('device_requests', {
+  id:              uuid('id').primaryKey().defaultRandom(),
+  requestedBy:     uuid('requested_by').notNull().references(() => users.id),
+  deviceType:      varchar('device_type', { length: 50 }).notNull(),
+  platform:        varchar('platform', { length: 50 }).notNull(),
+  osVersion:       varchar('os_version', { length: 50 }),
+  purpose:         text('purpose').notNull(),
+  status:          deviceRequestStatusEnum('status').notNull().default('pending'),
+  rejectionReason: text('rejection_reason'),
+  linkedDeviceId:  uuid('linked_device_id').references(() => devices.id),
+  approvedBy:      uuid('approved_by').references(() => users.id),
+  approvedAt:      timestamp('approved_at'),
+  rejectedBy:      uuid('rejected_by').references(() => users.id),
+  rejectedAt:      timestamp('rejected_at'),
+  completedBy:     uuid('completed_by').references(() => users.id),
+  completedAt:     timestamp('completed_at'),
+  createdAt:       timestamp('created_at').notNull().defaultNow(),
+  updatedAt:       timestamp('updated_at').notNull().defaultNow(),
+});
+```
+
+Export from `src/db/schema/index.ts`.
+
+---
+
+## Backend
+
+### Files
+
+| File | Action |
+|---|---|
+| `src/db/schema/device-requests.ts` | New — schema |
+| `drizzle/0011_device_requests.sql` | New — migration |
+| `src/modules/device-requests/device-requests.service.ts` | New |
+| `src/modules/device-requests/device-requests.routes.ts` | New |
+| `src/app.ts` | Register new routes under `/api/device-requests` |
+
+### API Endpoints
+
+```
+POST   /device-requests              Submit new request (read or write access)
+GET    /device-requests              List requests:
+                                       - admin/write → all, sorted by createdAt desc
+                                       - read-only   → own requests only
+GET    /device-requests/:id          Get single request (own or admin/write)
+PATCH  /device-requests/:id/approve  Approve (admin only)
+PATCH  /device-requests/:id/reject   Reject with reason (admin only)
+                                       Body: { reason: string }
+PATCH  /device-requests/:id/complete Complete with optional device link (admin only)
+                                       Body: { linkedDeviceId?: string }
+```
+
+### Service functions
+
+```ts
+createRequest(input, userId)          // inserts, sends Slack on submit
+listRequests(userId, role)            // all vs own based on role
+getRequest(id, userId, role)          // 403 if read-only and not owner
+approveRequest(id, adminId)           // status → approved, sends Slack
+rejectRequest(id, adminId, reason)    // status → rejected, sends Slack
+completeRequest(id, adminId, linkedDeviceId?)  // status → completed, sends Slack
+```
+
+### Slack notifications
+
+All go to `SLACK_DEVICE_WEBHOOK_URL`. Four events:
+
+**1. On submit:**
+```
+📋 New Device Request — 22 March 2026
+
+Requested by:  Ginil Jose (ginil@appknox.com)
+Device type:   Mobile
+Platform:      Android
+OS version:    Android 13
+Purpose:       Need for security testing sprint
+Status:        Pending
+```
+
+**2. On approve:**
+```
+✅ Device Request Approved — 22 March 2026
+Requested by: Ginil Jose  |  Approved by: Admin Name
+Device: Android Mobile (Android 13)
+```
+
+**3. On reject:**
+```
+❌ Device Request Rejected — 22 March 2026
+Requested by: Ginil Jose  |  Rejected by: Admin Name
+Reason: Device not currently available in inventory
+```
+
+**4. On complete:**
+```
+📦 Device Request Completed — 22 March 2026
+Requested by: Ginil Jose  |  Completed by: Admin Name
+Device allocated: A003 — Pixel 7a
+```
+
+---
+
+## Frontend
+
+### New files
+
+| File | Purpose |
+|---|---|
+| `src/types/device-request.types.ts` | `DeviceRequest`, `CreateDeviceRequestInput` types |
+| `src/api/deviceRequests.ts` | API calls for all endpoints |
+| `src/components/devices/RequestDeviceModal.tsx` | Submit form popup |
+| `src/components/devices/RejectRequestModal.tsx` | Reject popup (free-text reason) |
+| `src/components/devices/CompleteRequestModal.tsx` | Complete popup (device autosuggest) |
+| `src/components/devices/DeviceRequestsTab.tsx` | Tab content — table of requests |
+| `src/components/devices/RequestStatusBadge.tsx` | Status badge (pending/approved/rejected/completed) |
+
+### Modified files
+
+| File | Change |
+|---|---|
+| `src/pages/devices/DeviceListPage.tsx` | Add tabs (Inventory / Requests), Request Device button |
+
+---
+
+## `RequestDeviceModal.tsx` — Form Logic
+
+```
+Fields:
+  Device Type   [Select] mobile | tablet | charging_hub
+  Platform      [Select] — options change based on device type:
+                  mobile/tablet  → iOS | Android
+                  charging_hub   → Cambrionix (auto-selected, disabled)
+  OS Version    [Select + manual fallback] — shown only when mobile or tablet selected
+                  options loaded from API based on platform selection
+                  last option always: "Other (enter manually)" → shows free-text input
+  Purpose       [Textarea] required
+
+Validation: all required except OS version for charging_hub
+```
+
+---
+
+## `CompleteRequestModal.tsx` — Device Autosuggest
+
+On open: fetch `GET /devices?status=active&limit=50`
+Render a searchable dropdown — type to filter by device name (A001, A002…) or model.
+On select: shows device name + model + platform.
+Submit calls `PATCH /device-requests/:id/complete` with `linkedDeviceId`.
+
+---
+
+## `DeviceListPage.tsx` — Tab Structure
+
+```
+┌─────────────────────────────────────────────────────────┐
+│  Devices                          [Request a Device]    │
+├────────────────┬────────────────────────────────────────┤
+│  Inventory     │  Requests  ← tab visible to all        │
+├────────────────┴────────────────────────────────────────┤
+│  [existing device table / new requests table]           │
+└─────────────────────────────────────────────────────────┘
+```
+
+Tab label for admin/write: **"Requests"** (shows all, with Approve/Reject/Complete actions)
+Tab label for read-only: **"My Requests"** (shows only own, no action buttons)
+
+---
+
+## `DeviceRequestsTab.tsx` — Columns
+
+**Admin/write view:**
+| Requested By | Device Type | Platform | OS | Purpose | Status | Requested At | Actions |
+| Ginil Jose | Mobile | Android | 13 | Testing | 🟡 Pending | 22 Mar | [Approve] [Reject] |
+
+**Read-only view (own requests only):**
+| Device Type | Platform | OS | Purpose | Status | Requested At |
+| Mobile | Android | 13 | Testing | 🟡 Pending | 22 Mar |
+
+**Status badges:**
+- 🟡 Pending — yellow
+- 🔵 Approved — blue
+- 🔴 Rejected — red
+- 🟢 Completed — green
+
+On completed row → show linked device name (e.g. A003) as a chip.
+On rejected row → hover/click rejection reason shown as tooltip or expandable.
+
+---
+
+## Permissions
+
+Uses existing CASL setup:
+- Submit request: `read` on `Device` (all non-guest users)
+- List all / approve / reject / complete: `manage` on `Device` (admin) or `update` on `Device` (write access)
+- List own: `read` on `Device`
+
+---
+
+## Summary of New Files
+
+```
+knoxadmin/
+  src/db/schema/device-requests.ts
+  drizzle/0011_device_requests.sql
+  src/modules/device-requests/
+    device-requests.service.ts
+    device-requests.routes.ts
+
+knoxadmin-client/
+  src/types/device-request.types.ts
+  src/api/deviceRequests.ts
+  src/components/devices/
+    RequestDeviceModal.tsx
+    RejectRequestModal.tsx
+    CompleteRequestModal.tsx
+    DeviceRequestsTab.tsx
+    RequestStatusBadge.tsx
+  src/pages/devices/DeviceListPage.tsx  (modified)
+```
+
+
+---
+
+# Plan: OS Version Dropdown in Request Device Form
+
+**STATUS:** COMPLETED ✅
+
+**Completed:** 2026-03-22
+
+**Implementation Summary:**
+- ✅ Backend: Added `GET /devices/distinct-os-versions` route before `/:id` in `devices.routes.ts` with platform query validation
+- ✅ Backend: Implemented `getDistinctOsVersions()` service function querying metadata->>'osVersion' filtered by platform, ordered descending
+- ✅ Backend: Added `getDistinctOsVersionsHandler` controller with platform validation and error handling
+- ✅ Frontend: Added `devicesApi.getDistinctOsVersions()` to fetch versions from new endpoint
+- ✅ Frontend: Updated `RequestDeviceModal.tsx` with smart OS Version field:
+  - Fetches versions on platform change via useEffect with proper dependencies
+  - Shows dropdown with existing versions when API returns results
+  - "Other (enter manually)" option at bottom for custom versions
+  - Clicking "Other" or typing clears dropdown and shows text input
+  - Manual input persists until user re-selects platform
+  - Falls back to text input if no versions found (graceful degradation)
+  - Loading state while fetching versions
+  - Clears osVersion when platform/deviceType changes
+
+## Overview
+
+When a user selects a platform (iOS or Android) in the Request Device form, the OS Version field switches from a free-text input to a dropdown populated with distinct OS versions already registered in the device inventory. An "Other" option at the bottom allows manual entry for versions not in the list.
+
+---
+
+## Backend
+
+### New endpoint: `GET /devices/distinct-os-versions`
+
+```
+Query params:
+  platform: 'iOS' | 'Android'   (required)
+
+Response:
+  { versions: string[] }        // sorted descending e.g. ["17.4", "17.2", "16.6", "13"]
+```
+
+**Query logic** — reads from `metadata->>'osVersion'` filtered by `metadata->>'platform'`:
+
+```ts
+const results = await db
+  .selectDistinct({ osVersion: sql<string>`${devices.metadata}->>'osVersion'` })
+  .from(devices)
+  .where(
+    and(
+      sql`${devices.metadata}->>'platform' = ${platform}`,
+      sql`${devices.metadata}->>'osVersion' IS NOT NULL`,
+      eq(devices.isDeleted, false)
+    )
+  )
+  .orderBy(desc(sql`${devices.metadata}->>'osVersion'`));
+
+return { versions: results.map(r => r.osVersion).filter(Boolean) };
+```
+
+**File:** `knoxadmin/src/modules/devices/devices.routes.ts` — add the route **before** `/:id` to avoid param conflict.
+
+**Response schema:**
+```ts
+response: {
+  200: {
+    type: 'object',
+    properties: {
+      versions: { type: 'array', items: { type: 'string' } },
+    },
+  },
+},
+```
+
+No auth beyond standard `authenticate + authorize('read', 'Device')`.
+
+---
+
+## Frontend
+
+### New API function: `src/api/devices.ts`
+
+```ts
+getDistinctOsVersions: async (platform: 'iOS' | 'Android'): Promise<string[]> => {
+  const response = await apiClient.get<{ versions: string[] }>(
+    '/devices/distinct-os-versions',
+    { params: { platform } }
+  );
+  return response.data.versions;
+},
+```
+
+---
+
+### `RequestDeviceModal.tsx` — OS Version field behaviour
+
+**State:**
+```ts
+const [osVersions, setOsVersions]     = useState<string[]>([]);
+const [osVersionsLoading, setLoading] = useState(false);
+const [useManualOs, setUseManualOs]   = useState(false);
+```
+
+**Trigger fetch** when platform changes (and deviceType is mobile or tablet):
+```ts
+useEffect(() => {
+  if (!platform || deviceType === 'charging_hub') return;
+  setUseManualOs(false);
+  setValue('osVersion', '');
+  setLoading(true);
+  devicesApi.getDistinctOsVersions(platform as 'iOS' | 'Android')
+    .then(setOsVersions)
+    .finally(() => setLoading(false));
+}, [platform, deviceType]);
+```
+
+**Render logic:**
+```tsx
+{showOsVersion && (
+  useManualOs ? (
+    <div>
+      <Input
+        label="OS Version"
+        {...register('osVersion')}
+        placeholder="e.g. iOS 17.5"
+      />
+      <button onClick={() => { setUseManualOs(false); setValue('osVersion', ''); }}>
+        ← Back to list
+      </button>
+    </div>
+  ) : (
+    <Select
+      label="OS Version"
+      isLoading={osVersionsLoading}
+      options={[
+        ...osVersions.map(v => ({ label: v, value: v })),
+        { label: 'Other (enter manually)', value: '__other__' },
+      ]}
+      onChange={(val) => {
+        if (val === '__other__') {
+          setUseManualOs(true);
+          setValue('osVersion', '');
+        } else {
+          setValue('osVersion', val);
+        }
+      }}
+    />
+  )
+)}
+```
+
+**Reset on platform change:** clear `osVersion` field and reset `useManualOs` to false whenever platform dropdown changes.
+
+**Empty state:** if API returns no versions (no devices of that platform registered yet), skip the dropdown and go straight to manual input with a hint: *"No versions found — enter manually"*.
+
+---
+
+## Files Changed
+
+| File | Change |
+|---|---|
+| `knoxadmin/src/modules/devices/devices.routes.ts` | Add `GET /devices/distinct-os-versions` |
+| `knoxadmin-client/src/api/devices.ts` | Add `getDistinctOsVersions` |
+| `knoxadmin-client/src/components/devices/RequestDeviceModal.tsx` | Replace OS text input with smart dropdown + manual fallback |
+
