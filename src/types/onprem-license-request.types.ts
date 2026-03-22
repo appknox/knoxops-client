@@ -45,7 +45,7 @@ export interface OnpremLicenseRequest {
 
 export interface CreateLicenseRequestInput {
   requestType: LicenseRequestType;
-  targetVersion?: string;
+  targetVersion: string;
   licenseStartDate: string;
   licenseEndDate: string;
   numberOfProjects: number;

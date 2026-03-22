@@ -50,28 +50,16 @@ export function RequestLicenseModal({
   const [notes, setNotes] = useState('');
   const [errors, setErrors] = useState<Record<string, string>>({});
 
-  // Prefill fingerprint from deployment on open
+  // Prefill all fields from deployment on open
   useEffect(() => {
     if (isOpen && deployment) {
-      setFingerprint((deployment.infrastructure as any)?.fingerprint || '');
-    }
-  }, [isOpen, deployment]);
-
-  // Prefill dates/version for patch_update from deployment data
-  useEffect(() => {
-    if (requestType === 'patch_update' && deployment) {
       setTargetVersion(deployment.currentVersion || '');
       setStartDate(toDateInputValue(deployment.license?.startDate));
       setEndDate(toDateInputValue(deployment.license?.endDate));
       setNumberOfProjects(String(deployment.license?.numberOfApps || ''));
-    } else if (requestType === 'license_renewal') {
-      setTargetVersion('');
-      setStartDate('');
-      setEndDate('');
-      setNumberOfProjects('');
+      setFingerprint((deployment.infrastructure as any)?.fingerprint || '');
     }
-    setErrors({});
-  }, [requestType, deployment]);
+  }, [isOpen, deployment]);
 
   const handleClose = () => {
     setRequestType('license_renewal');
@@ -89,9 +77,7 @@ export function RequestLicenseModal({
   const validate = (): boolean => {
     const errs: Record<string, string> = {};
 
-    if (requestType === 'patch_update' && !targetVersion.trim()) {
-      errs.targetVersion = 'Target version is required';
-    }
+    if (!targetVersion.trim()) errs.targetVersion = 'Version is required';
     if (!startDate) errs.startDate = 'Start date is required';
     if (!endDate) errs.endDate = 'End date is required';
     if (!numberOfProjects || Number(numberOfProjects) < 1) {
@@ -120,7 +106,7 @@ export function RequestLicenseModal({
     try {
       await createRequest(deploymentId, {
         requestType,
-        targetVersion: requestType === 'patch_update' ? targetVersion.trim() : undefined,
+        targetVersion: targetVersion.trim(),
         licenseStartDate: new Date(startDate).toISOString(),
         licenseEndDate: new Date(endDate).toISOString(),
         numberOfProjects: Number(numberOfProjects),
@@ -172,30 +158,23 @@ export function RequestLicenseModal({
           </div>
         </div>
 
-        {/* Target Version (patch_update only) */}
-        {requestType === 'patch_update' && (
-          <div>
-            <label className={labelClass}>Target Version *</label>
-            <input
-              type="text"
-              value={targetVersion}
-              onChange={(e) => setTargetVersion(e.target.value)}
-              placeholder="e.g. 2.1.4"
-              className={dateInput}
-            />
-            {errors.targetVersion && <p className={errorClass}>{errors.targetVersion}</p>}
-          </div>
-        )}
+        {/* Version */}
+        <div>
+          <label className={labelClass}>Version *</label>
+          <input
+            type="text"
+            value={targetVersion}
+            onChange={(e) => setTargetVersion(e.target.value)}
+            placeholder="e.g. 2.1.4"
+            className={dateInput}
+          />
+          {errors.targetVersion && <p className={errorClass}>{errors.targetVersion}</p>}
+        </div>
 
         {/* License Dates */}
         <div className="grid grid-cols-2 gap-4">
           <div>
-            <label className={labelClass}>
-              License Start Date *
-              {requestType === 'patch_update' && (
-                <span className="ml-1 text-xs text-gray-400">(prefilled)</span>
-              )}
-            </label>
+            <label className={labelClass}>License Start Date *</label>
             <input
               type="date"
               value={startDate}
@@ -205,12 +184,7 @@ export function RequestLicenseModal({
             {errors.startDate && <p className={errorClass}>{errors.startDate}</p>}
           </div>
           <div>
-            <label className={labelClass}>
-              License End Date *
-              {requestType === 'patch_update' && (
-                <span className="ml-1 text-xs text-gray-400">(prefilled)</span>
-              )}
-            </label>
+            <label className={labelClass}>License End Date *</label>
             <input
               type="date"
               value={endDate}
@@ -223,12 +197,7 @@ export function RequestLicenseModal({
 
         {/* Number of Projects */}
         <div>
-          <label className={labelClass}>
-            Number of Projects *
-            {requestType === 'patch_update' && (
-              <span className="ml-1 text-xs text-gray-400">(prefilled)</span>
-            )}
-          </label>
+          <label className={labelClass}>Number of Projects *</label>
           <input
             type="number"
             min="1"
@@ -242,10 +211,7 @@ export function RequestLicenseModal({
 
         {/* Fingerprint */}
         <div>
-          <label className={labelClass}>
-            Fingerprint *
-            <span className="ml-1 text-xs text-gray-400">(prefilled from deployment)</span>
-          </label>
+          <label className={labelClass}>Fingerprint *</label>
           <input
             type="text"
             value={fingerprint}

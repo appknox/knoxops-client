@@ -133,9 +133,9 @@ export function LicenseRequestDetailsModal({
             </span>
           </div>
 
-          {request.requestType === 'patch_update' && request.targetVersion && (
+          {request.targetVersion && (
             <div className="flex justify-between text-sm">
-              <span className="text-gray-600">Target Version:</span>
+              <span className="text-gray-600">Version:</span>
               <span className="font-medium text-gray-900">{request.targetVersion}</span>
             </div>
           )}
