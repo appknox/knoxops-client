@@ -120,7 +120,7 @@ const ActivityItem = ({ log }: { log: AuditLog }) => {
 
   return (
     <div className="flex gap-3 py-4 border-b last:border-0">
-      <div className={`mt-0.5 p-2 rounded-full ${config.bgColor}`}>{config.icon}</div>
+      <div className={`h-fit w-fit mt-0.5 p-2 rounded-full ${config.bgColor}`}>{config.icon}</div>
       <div className="flex-1 min-w-0">
         <div className="flex items-center justify-between">
           <span className="font-medium text-sm">{config.label}</span>
