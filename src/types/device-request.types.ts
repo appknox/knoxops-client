@@ -2,6 +2,7 @@ export type DeviceRequestStatus = 'pending' | 'approved' | 'rejected' | 'complet
 
 export interface DeviceRequest {
   id: string;
+  requestNo: number;
   requestedBy: string;
   requestedByUser?: {
     id: string;
@@ -13,9 +14,15 @@ export interface DeviceRequest {
   platform: string;
   osVersion?: string | null;
   purpose: string;
+  requestingFor?: string | null;
   status: DeviceRequestStatus;
   rejectionReason?: string | null;
   linkedDeviceId?: string | null;
+  linkedDevice?: {
+    id: string;
+    name: string;
+    model?: string | null;
+  } | null;
   approvedBy?: string | null;
   approvedByUser?: {
     id: string;
@@ -49,6 +56,16 @@ export interface CreateDeviceRequestInput {
   platform: string;
   osVersion?: string;
   purpose: string;
+  requestingFor: string;
+}
+
+export interface SuggestedDevice {
+  id: string;
+  name: string;
+  model?: string | null;
+  platform?: string | null;
+  osVersion?: string | null;
+  status: string;
 }
 
 export interface ListDeviceRequestsResponse {

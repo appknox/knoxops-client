@@ -8,6 +8,7 @@ import { Button, Input, Select, Textarea, Card, CardBody } from '@/components/ui
 import { FetchDeviceWizard } from '@/components/devices';
 import { useDeviceStore } from '@/stores';
 import { devicesApi } from '@/api/devices';
+import { PURPOSE_OPTIONS } from '@/constants/deviceOptions';
 import type { DeviceType, DeviceStatus } from '@/types';
 
 const deviceTypes = ['server', 'workstation', 'mobile', 'tablet', 'iot', 'network', 'charging_hub', 'other'] as const;
@@ -74,12 +75,7 @@ const cpuArchOptions = [
 
 const purposeOptions = [
   { value: '', label: 'Select Purpose' },
-  { value: 'Engineering', label: 'Engineering' },
-  { value: 'Testing', label: 'Testing' },
-  { value: 'Production', label: 'Production' },
-  { value: 'Marketing', label: 'Marketing' },
-  { value: 'Sales', label: 'Sales' },
-  { value: 'onPrem', label: 'On-Prem' },
+  ...PURPOSE_OPTIONS.filter((opt) => opt.value !== '__other__'),
   { value: 'toBeRepaired', label: 'To Be Repaired' },
 ];
 

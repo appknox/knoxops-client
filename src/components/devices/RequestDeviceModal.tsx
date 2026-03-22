@@ -2,27 +2,18 @@ import { useState, useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { Modal, Button, Select, Input, Textarea } from '@/components/ui';
+import { Modal, Button, Input, Textarea } from '@/components/ui';
 import { useDeviceRequestStore } from '@/stores/deviceRequestStore.js';
+import { useAuthStore } from '@/stores/authStore.js';
 import { devicesApi } from '@/api';
-
-const platformOptions: Record<string, Array<{ value: string; label: string }>> = {
-  mobile: [
-    { value: 'iOS', label: 'iOS' },
-    { value: 'Android', label: 'Android' },
-  ],
-  tablet: [
-    { value: 'iOS', label: 'iOS' },
-    { value: 'Android', label: 'Android' },
-  ],
-  charging_hub: [{ value: 'Cambrionix', label: 'Cambrionix' }],
-};
+import { PURPOSE_OPTIONS, PLATFORM_OPTIONS_BY_TYPE } from '@/constants/deviceOptions';
 
 const requestSchema = z.object({
   deviceType: z.enum(['mobile', 'tablet', 'charging_hub']),
   platform: z.string().min(1, 'Platform is required'),
   osVersion: z.string().optional(),
-  purpose: z.string().min(10, 'Purpose must be at least 10 characters'),
+  purpose: z.string().min(1, 'Purpose is required'),
+  requestingFor: z.string().min(1, 'Requesting for is required'),
 });
 
 type RequestFormData = z.infer<typeof requestSchema>;
@@ -34,10 +25,12 @@ interface RequestDeviceModalProps {
 
 export function RequestDeviceModal({ isOpen, onClose }: RequestDeviceModalProps) {
   const { createRequest } = useDeviceRequestStore();
+  const { user } = useAuthStore();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [osVersions, setOsVersions] = useState<string[]>([]);
   const [loadingVersions, setLoadingVersions] = useState(false);
   const [showManualOsVersion, setShowManualOsVersion] = useState(false);
+  const [showManualPurpose, setShowManualPurpose] = useState(false);
 
   const {
     register,
@@ -48,10 +41,14 @@ export function RequestDeviceModal({ isOpen, onClose }: RequestDeviceModalProps)
     formState: { errors },
   } = useForm<RequestFormData>({
     resolver: zodResolver(requestSchema),
+    defaultValues: {
+      requestingFor: user ? `${user.firstName} ${user.lastName}` : '',
+    },
   });
 
   const selectedDeviceType = watch('deviceType');
   const selectedPlatform = watch('platform');
+  const selectedPurpose = watch('purpose');
 
   // Fetch OS versions when platform changes
   useEffect(() => {
@@ -84,6 +81,7 @@ export function RequestDeviceModal({ isOpen, onClose }: RequestDeviceModalProps)
 
   const handleClose = () => {
     reset();
+    setShowManualPurpose(false);
     onClose();
   };
 
@@ -100,6 +98,7 @@ export function RequestDeviceModal({ isOpen, onClose }: RequestDeviceModalProps)
   return (
     <Modal isOpen={isOpen} onClose={handleClose} title="Request a Device" size="lg">
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-6 p-6">
+        {/* Device Type */}
         <div>
           <label className="block text-sm font-medium text-gray-900 mb-2">Device Type *</label>
           <select
@@ -114,6 +113,7 @@ export function RequestDeviceModal({ isOpen, onClose }: RequestDeviceModalProps)
           {errors.deviceType && <p className="mt-1 text-sm text-red-600">{errors.deviceType.message}</p>}
         </div>
 
+        {/* Platform */}
         {selectedDeviceType && (
           <div>
             <label className="block text-sm font-medium text-gray-900 mb-2">Platform *</label>
@@ -122,7 +122,7 @@ export function RequestDeviceModal({ isOpen, onClose }: RequestDeviceModalProps)
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
             >
               <option value="">Select platform</option>
-              {platformOptions[selectedDeviceType]?.map((opt) => (
+              {PLATFORM_OPTIONS_BY_TYPE[selectedDeviceType as keyof typeof PLATFORM_OPTIONS_BY_TYPE]?.map((opt) => (
                 <option key={opt.value} value={opt.value}>
                   {opt.label}
                 </option>
@@ -132,6 +132,7 @@ export function RequestDeviceModal({ isOpen, onClose }: RequestDeviceModalProps)
           </div>
         )}
 
+        {/* OS Version */}
         {selectedDeviceType && selectedDeviceType !== 'charging_hub' && (
           <div>
             <label className="block text-sm font-medium text-gray-900 mb-2">OS Version</label>
@@ -179,14 +180,63 @@ export function RequestDeviceModal({ isOpen, onClose }: RequestDeviceModalProps)
           </div>
         )}
 
+        {/* Purpose - Dropdown */}
         <div>
           <label className="block text-sm font-medium text-gray-900 mb-2">Purpose *</label>
-          <Textarea
-            {...register('purpose')}
-            placeholder="Describe the purpose of this device request..."
-            rows={4}
-          />
+          {!showManualPurpose ? (
+            <>
+              <select
+                {...register('purpose')}
+                onChange={(e) => {
+                  if (e.target.value === '__other__') {
+                    setShowManualPurpose(true);
+                    setValue('purpose', '');
+                  }
+                }}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
+              >
+                <option value="">Select purpose</option>
+                {PURPOSE_OPTIONS.map((opt) => (
+                  <option key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </option>
+                ))}
+              </select>
+            </>
+          ) : (
+            <div>
+              <Textarea
+                {...register('purpose')}
+                placeholder="Describe the purpose of this device request..."
+                rows={4}
+                autoFocus
+              />
+              <button
+                type="button"
+                onClick={() => {
+                  setShowManualPurpose(false);
+                  setValue('purpose', '');
+                }}
+                className="mt-2 text-sm text-primary-600 hover:text-primary-700"
+              >
+                ← Back to list
+              </button>
+            </div>
+          )}
           {errors.purpose && <p className="mt-1 text-sm text-red-600">{errors.purpose.message}</p>}
+        </div>
+
+        {/* Requesting For */}
+        <div>
+          <label className="block text-sm font-medium text-gray-900 mb-2">Requesting For *</label>
+          <Input
+            {...register('requestingFor')}
+            placeholder="Full name of the person this device is for"
+          />
+          <p className="mt-1 text-xs text-gray-500">
+            Pre-filled with your name. Change if requesting on behalf of someone else.
+          </p>
+          {errors.requestingFor && <p className="mt-1 text-sm text-red-600">{errors.requestingFor.message}</p>}
         </div>
 
         <div className="flex justify-end gap-3 pt-6 border-t">

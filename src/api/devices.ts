@@ -9,6 +9,7 @@ import type {
   DeviceComment,
 } from '@/types';
 import type { AuditLog } from '@/types';
+import type { SuggestedDevice } from '@/types/device-request.types';
 
 export const devicesApi = {
   list: async (params?: ListDevicesParams): Promise<DeviceListResponse> => {
@@ -111,5 +112,13 @@ export const devicesApi = {
       params: { platform },
     });
     return response.data.versions;
+  },
+
+  // Suggest devices for request completion
+  suggestDevices: async (platform: string, osVersion?: string): Promise<SuggestedDevice[]> => {
+    const response = await apiClient.get<{ data: SuggestedDevice[] }>('/devices/suggest', {
+      params: { platform, osVersion },
+    });
+    return response.data.data;
   },
 };

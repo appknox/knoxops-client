@@ -10,5 +10,6 @@ export { RequestDeviceModal } from './RequestDeviceModal';
 export { RejectRequestModal } from './RejectRequestModal';
 export { CompleteRequestModal } from './CompleteRequestModal';
 export { RejectionDetailsModal } from './RejectionDetailsModal';
+export { RequestDetailsModal } from './RequestDetailsModal';
 export { DeviceRequestsTab } from './DeviceRequestsTab';
 export { RequestStatusBadge } from './RequestStatusBadge';

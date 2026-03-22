@@ -109,6 +109,7 @@ const OnpremClientsTab = () => {
         deployments={deployments}
         pagination={pagination}
         onPageChange={setPage}
+        onRowClick={(deployment) => navigate(`/onprem/${deployment.id}`)}
         onEdit={handleEdit}
         onDelete={setDeleteDeployment}
         onViewHistory={setHistoryDeployment}

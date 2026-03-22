@@ -6,7 +6,7 @@ import { Button } from '@/components/ui';
 import { RequestStatusBadge } from './RequestStatusBadge.js';
 import { RejectRequestModal } from './RejectRequestModal.js';
 import { CompleteRequestModal } from './CompleteRequestModal.js';
-import { RejectionDetailsModal } from './RejectionDetailsModal.js';
+import { RequestDetailsModal } from './RequestDetailsModal.js';
 import { ChevronLeft, ChevronRight, AlertCircle } from 'lucide-react';
 import type { DeviceRequest } from '@/types/device-request.types.js';
 
@@ -17,9 +17,9 @@ export function DeviceRequestsTab() {
   const { user } = useAuthStore();
   const { canManageDevices } = usePermissions();
   const [page, setPage] = useState(1);
-  const [rejectingRequestId, setRejectingRequestId] = useState<string | null>(null);
-  const [completingRequestId, setCompletingRequestId] = useState<string | null>(null);
-  const [rejectionDetailsRequestId, setRejectionDetailsRequestId] = useState<string | null>(null);
+  const [rejectingRequest, setRejectingRequest] = useState<DeviceRequest | null>(null);
+  const [completingRequest, setCompletingRequest] = useState<DeviceRequest | null>(null);
+  const [detailsRequest, setDetailsRequest] = useState<DeviceRequest | null>(null);
 
   useEffect(() => {
     fetchRequests();
@@ -66,6 +66,7 @@ export function DeviceRequestsTab() {
         <table className="w-full">
           <thead className="bg-gray-50 border-b border-gray-200">
             <tr>
+              <th className="px-6 py-3 text-left text-sm font-medium text-gray-700">#</th>
               {isAdmin && <th className="px-6 py-3 text-left text-sm font-medium text-gray-700">Requested By</th>}
               <th className="px-6 py-3 text-left text-sm font-medium text-gray-700">Device Type</th>
               <th className="px-6 py-3 text-left text-sm font-medium text-gray-700">Platform</th>
@@ -78,7 +79,12 @@ export function DeviceRequestsTab() {
           </thead>
           <tbody className="divide-y divide-gray-200">
             {paginatedRequests.map((request) => (
-              <tr key={request.id} className="hover:bg-gray-50">
+              <tr
+                key={request.id}
+                className="hover:bg-gray-50 cursor-pointer"
+                onClick={() => setDetailsRequest(request)}
+              >
+                <td className="px-6 py-4 text-sm font-medium text-gray-500">#{request.requestNo}</td>
                 {isAdmin && (
                   <td className="px-6 py-4 text-sm text-gray-900">
                     {request.requestedByUser?.firstName} {request.requestedByUser?.lastName}
@@ -98,20 +104,11 @@ export function DeviceRequestsTab() {
                         Allocated
                       </div>
                     )}
-                    {request.status === 'rejected' && request.rejectionReason && (
-                      <button
-                        onClick={() => setRejectionDetailsRequestId(request.id)}
-                        className="text-sm text-gray-600 hover:text-gray-900 hover:underline flex items-center gap-1 transition-colors"
-                        title="Click to view rejection details"
-                      >
-                        ℹ️ <span className="text-xs">Details</span>
-                      </button>
-                    )}
                   </div>
                 </td>
                 <td className="px-6 py-4 text-sm text-gray-600">{formatDate(request.createdAt)}</td>
                 {isAdmin && (
-                  <td className="px-6 py-4 text-right">
+                  <td className="px-6 py-4 text-right" onClick={(e) => e.stopPropagation()}>
                     <div className="flex justify-end gap-2">
                       {request.status === 'pending' && (
                         <>
@@ -128,7 +125,7 @@ export function DeviceRequestsTab() {
                           <Button
                             size="sm"
                             variant="outline"
-                            onClick={() => setRejectingRequestId(request.id)}
+                            onClick={() => setRejectingRequest(request)}
                           >
                             Reject
                           </Button>
@@ -139,14 +136,14 @@ export function DeviceRequestsTab() {
                           <Button
                             size="sm"
                             variant="outline"
-                            onClick={() => setCompletingRequestId(request.id)}
+                            onClick={() => setCompletingRequest(request)}
                           >
                             Complete
                           </Button>
                           <Button
                             size="sm"
                             variant="outline"
-                            onClick={() => setRejectingRequestId(request.id)}
+                            onClick={() => setRejectingRequest(request)}
                           >
                             Reject
                           </Button>
@@ -191,36 +188,27 @@ export function DeviceRequestsTab() {
       </div>
 
       {/* Modals */}
-      {rejectingRequestId && (
+      {rejectingRequest && (
         <RejectRequestModal
-          isOpen={!!rejectingRequestId}
-          onClose={() => setRejectingRequestId(null)}
-          requestId={rejectingRequestId}
+          isOpen={!!rejectingRequest}
+          onClose={() => setRejectingRequest(null)}
+          request={rejectingRequest}
         />
       )}
-      {completingRequestId && (
-        <CompleteRequestModal
-          isOpen={!!completingRequestId}
-          onClose={() => setCompletingRequestId(null)}
-          requestId={completingRequestId}
-        />
-      )}
-      {rejectionDetailsRequestId && (() => {
-        const rejectionRequest = requests.find((r) => r.id === rejectionDetailsRequestId);
-        const rejectedByUser = rejectionRequest?.rejectedByUser;
-        const rejectedByUserName = rejectedByUser
-          ? `${rejectedByUser.firstName} ${rejectedByUser.lastName}`
-          : undefined;
+      <RequestDetailsModal
+        isOpen={!!detailsRequest}
+        onClose={() => setDetailsRequest(null)}
+        request={detailsRequest}
+      />
 
-        return (
-          <RejectionDetailsModal
-            isOpen={!!rejectionDetailsRequestId}
-            onClose={() => setRejectionDetailsRequestId(null)}
-            request={rejectionRequest || null}
-            rejectedByUserName={rejectedByUserName}
-          />
-        );
-      })()}
+      {completingRequest && (
+        <CompleteRequestModal
+          isOpen={!!completingRequest}
+          onClose={() => setCompletingRequest(null)}
+          requestId={completingRequest.id}
+          request={completingRequest}
+        />
+      )}
     </>
   );
 }

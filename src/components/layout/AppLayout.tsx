@@ -2,11 +2,13 @@ import { Outlet, Navigate, useLocation } from 'react-router-dom';
 import { useEffect } from 'react';
 import { Loader2 } from 'lucide-react';
 import { useAuthStore } from '@/stores';
+import { usePermissions } from '@/hooks/usePermissions';
 import { Navbar } from './Navbar';
 
 const AppLayout = () => {
   const location = useLocation();
   const { user, isAuthenticated, isInitialized, checkAuth } = useAuthStore();
+  const { canViewDevices } = usePermissions();
 
   useEffect(() => {
     checkAuth();
@@ -31,7 +33,13 @@ const AppLayout = () => {
   );
 
   if (isAdminRoute && user?.role !== 'admin') {
-    return <Navigate to="/devices" replace />;
+    return <Navigate to="/onprem" replace />;
+  }
+
+  // Device route protection
+  const isDeviceRoute = location.pathname.startsWith('/devices');
+  if (isDeviceRoute && !canViewDevices) {
+    return <Navigate to="/onprem" replace />;
   }
 
   return (

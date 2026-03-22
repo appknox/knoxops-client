@@ -6,6 +6,7 @@ import { Loader2 } from 'lucide-react';
 import { Modal, Button, Input, Select, Textarea } from '@/components/ui';
 import { useDeviceStore } from '@/stores';
 import { devicesApi } from '@/api/devices';
+import { PURPOSE_OPTIONS } from '@/constants/deviceOptions';
 import type { Device, DeviceType, DeviceStatus } from '@/types';
 
 const updateDeviceSchema = z.object({
@@ -75,12 +76,7 @@ const cpuArchOptions = [
 
 const purposeOptions = [
   { value: '', label: 'Select Purpose' },
-  { value: 'Engineering', label: 'Engineering' },
-  { value: 'Testing', label: 'Testing' },
-  { value: 'Production', label: 'Production' },
-  { value: 'Marketing', label: 'Marketing' },
-  { value: 'Sales', label: 'Sales' },
-  { value: 'onPrem', label: 'On-Prem' },
+  ...PURPOSE_OPTIONS.filter((opt) => opt.value !== '__other__'),
   { value: 'toBeRepaired', label: 'To Be Repaired' },
 ];
 

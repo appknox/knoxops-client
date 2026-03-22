@@ -2,11 +2,13 @@ import { Link, useLocation } from 'react-router-dom';
 import { Bell, Search, LogOut, User, ChevronDown } from 'lucide-react';
 import { useState, useRef, useEffect } from 'react';
 import { useAuthStore } from '@/stores';
+import { usePermissions } from '@/hooks/usePermissions';
 import { Avatar } from '@/components/ui';
 
 const Navbar = () => {
   const location = useLocation();
   const { user, logout } = useAuthStore();
+  const { canViewDevices } = usePermissions();
   const [showUserMenu, setShowUserMenu] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -26,7 +28,8 @@ const Navbar = () => {
 
   const navLinks = [
     { path: '/dashboard', label: 'Dashboard' },
-    { path: '/devices', label: 'Devices' },
+    // Only show Devices link for users with device access
+    ...(canViewDevices ? [{ path: '/devices', label: 'Devices' }] : []),
     // Only show On-Prem link for users with on-prem access
     ...(canSeeOnprem ? [{ path: '/onprem', label: 'On-Prem' }] : []),
     // Only show Settings link for admin users
@@ -68,19 +71,6 @@ const Navbar = () => {
 
           {/* Search and User Menu */}
           <div className="flex items-center gap-4">
-            <div className="relative hidden md:block">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-              <input
-                type="text"
-                placeholder="Search devices, serials, or users..."
-                className="w-72 pl-10 pr-4 py-2 text-sm border border-gray-300 rounded-lg bg-gray-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary-500"
-              />
-            </div>
-
-            <button className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg relative">
-              <Bell className="h-5 w-5" />
-              <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-primary-500 rounded-full" />
-            </button>
 
             {/* User Menu */}
             <div className="relative" ref={menuRef}>

@@ -27,8 +27,8 @@ export const notificationsApi = {
     return response.data;
   },
 
-  triggerPatchReminders: async (): Promise<TriggerResponse> => {
-    const response = await apiClient.post<TriggerResponse>('/notifications/patch-reminders/trigger');
+  triggerPatchReminders: async (deploymentIds: string[]): Promise<TriggerResponse> => {
+    const response = await apiClient.post<TriggerResponse>('/notifications/patch-reminders/trigger', { deploymentIds });
     return response.data;
   },
 

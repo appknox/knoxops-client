@@ -9569,7 +9569,7 @@ useEffect(() => {
 
 # Plan: Rejection Details Modal in Device Requests
 
-**STATUS:** IN PROGRESS
+**STATUS:** ✅ COMPLETED (2026-03-22)
 
 ## Overview
 
@@ -9690,4 +9690,1294 @@ User clicks [Close] or [×] to dismiss modal
 - ✅ Modal has clear [Close] button
 - ✅ Rejection reason highlighted in red box for visibility
 - ✅ Modal responsive and accessible
+
+---
+
+# Plan: Smart Complete Request — Device Autosuggest + Purpose Dropdown + Device Side-Effects
+
+**STATUS:** ✅ COMPLETED (2026-03-22)
+
+**Date:** 2026-03-22
+
+---
+
+## Overview
+
+Three interrelated improvements to the device request completion flow:
+
+1. **Smart device suggestion** in CompleteRequestModal — filter and sort devices by the request's criteria (platform, OS version compatibility)
+2. **Auto side-effects on complete** — when a device is linked, update that device's `status → inactive` and `purpose` to the request's purpose
+3. **Purpose as dropdown** in RequestDeviceModal — replace free-text textarea with the same predefined options used in Add/Edit device form, with "Other" manual fallback
+4. **Purpose visible everywhere** — in reject popup, Slack notifications, completion modal, details view
+
+---
+
+## 1. Smart Device Suggestion in CompleteRequestModal
+
+### Current behaviour
+Fetches all active devices, filters only by search query (name or model). No regard for request criteria.
+
+### Target behaviour
+
+**Filtering:**
+- Only show `status = active` (in inventory) ✅ already done
+- Filter by `platform` — device's `metadata->>'platform'` must match the request's platform (iOS / Android / Cambrionix)
+- Filter by OS version compatibility — device's `metadata->>'osVersion'` must be **≥ requested OS version** (semver-like numeric sort)
+
+**Sorting in dropdown:**
+1. Devices with **exact** OS version match first
+2. Then higher versions (ascending — closest match at top)
+3. Within same version, sort by device name alphabetically
+
+**Display in dropdown row:**
+```
+A133  —  Samsung Galaxy S22 Ultra
+         Android 14  ·  In Inventory
+```
+
+**Empty state:**
+```
+No Android 13+ devices in inventory
+```
+with a hint "You can still complete without assigning a device"
+
+### Backend changes
+
+#### New endpoint: `GET /devices/suggest`
+
+```
+Query params:
+  platform:   string  (required)   e.g. 'Android', 'iOS', 'Cambrionix'
+  osVersion:  string  (optional)   e.g. '13', '17.2'
+  limit:      number  (default 50)
+
+Response:
+  { data: SuggestedDevice[] }
+
+SuggestedDevice:
+  id, name, model, platform, osVersion, status
+```
+
+**Query logic:**
+```ts
+// In devices.service.ts
+export async function suggestDevices(platform: string, osVersion?: string) {
+  const rows = await db
+    .select({
+      id:        devices.id,
+      name:      devices.name,
+      model:     devices.model,
+      platform:  sql<string>`${devices.metadata}->>'platform'`,
+      osVersion: sql<string>`${devices.metadata}->>'osVersion'`,
+      status:    devices.status,
+    })
+    .from(devices)
+    .where(
+      and(
+        eq(devices.status, 'active'),
+        eq(devices.isDeleted, false),
+        sql`${devices.metadata}->>'platform' = ${platform}`,
+        osVersion
+          ? sql`(${devices.metadata}->>'osVersion')::numeric >= ${parseFloat(osVersion)}`
+          : sql`true`
+      )
+    )
+    .orderBy(
+      sql`ABS((${devices.metadata}->>'osVersion')::numeric - ${parseFloat(osVersion || '0')})`,
+      asc(devices.name)
+    );
+
+  return rows;
+}
+```
+
+> Note: `::numeric` cast works for simple version strings like "13", "14", "17". For versions like "17.2" it needs `::float`. Use `::float` to handle both.
+
+**Route:** Add `GET /devices/suggest` before `/:id` in `devices.routes.ts`.
+
+**Auth:** `authenticate + authorize('read', 'Device')` — same as other device reads.
+
+#### Response schema
+```ts
+response: {
+  200: {
+    type: 'object',
+    properties: {
+      data: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: {
+            id:        { type: 'string' },
+            name:      { type: 'string' },
+            model:     { type: 'string', nullable: true },
+            platform:  { type: 'string', nullable: true },
+            osVersion: { type: 'string', nullable: true },
+            status:    { type: 'string' },
+          },
+        },
+      },
+    },
+  },
+},
+```
+
+### Frontend changes: `CompleteRequestModal.tsx`
+
+**Props change:** receive the request object so we know its platform + osVersion:
+```ts
+interface CompleteRequestModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  requestId: string;
+  request: DeviceRequest;   // NEW
+}
+```
+
+**Fetch:** Replace `devicesApi.list({ status: 'active' })` with `devicesApi.suggestDevices(platform, osVersion)`.
+
+**New API function in `src/api/devices.ts`:**
+```ts
+suggestDevices: async (platform: string, osVersion?: string): Promise<SuggestedDevice[]> => {
+  const response = await apiClient.get<{ data: SuggestedDevice[] }>('/devices/suggest', {
+    params: { platform, osVersion },
+  });
+  return response.data.data;
+},
+```
+
+**New type in `src/types/device.types.ts`:**
+```ts
+export interface SuggestedDevice {
+  id: string;
+  name: string;
+  model?: string | null;
+  platform?: string | null;
+  osVersion?: string | null;
+  status: string;
+}
+```
+
+**Dropdown row rendering:**
+```tsx
+<button key={device.id} onClick={() => handleSelectDevice(device)} ...>
+  <div className="font-medium text-gray-900">{device.name}</div>
+  <div className="text-sm text-gray-500">
+    {device.model || 'Unknown Model'}
+    {device.platform && ` · ${device.platform}`}
+    {device.osVersion && ` ${device.osVersion}`}
+  </div>
+</button>
+```
+
+**Selected device chip** (already rendered on selection — enhance to show OS version):
+```tsx
+<div>
+  <div className="font-medium text-gray-900">{selectedDevice.name}</div>
+  <div className="text-sm text-gray-600">
+    {selectedDevice.model}
+    {selectedDevice.osVersion && ` · ${selectedDevice.osVersion}`}
+  </div>
+</div>
+```
+
+**Empty state:**
+```tsx
+<div className="p-4 text-center text-gray-500 text-sm">
+  No {request.platform} {request.osVersion ? `${request.osVersion}+` : ''} devices in inventory
+  <div className="text-xs mt-1 text-gray-400">You can complete without assigning a device</div>
+</div>
+```
+
+---
+
+## 2. Auto Side-Effects on Complete
+
+When a request is completed with a linked device, the backend must automatically:
+- Update `devices.status` → `'inactive'` (= "Checked Out" in UI)
+- Update `devices.purpose` → the request's `purpose` value
+- Update `devices.assigned_to` → the request's `requesting_for` value (see Addendum below)
+- Log an audit entry for the device (status change + assignedTo change)
+
+### Backend: `device-requests.service.ts` → `completeRequest()`
+
+```ts
+export async function completeRequest(id: string, adminId: string, linkedDeviceId?: string) {
+  const request = await getRequest(id);
+  if (!request) throw new Error('Request not found');
+  if (request.status !== 'approved') throw new Error('Only approved requests can be completed');
+
+  await db.transaction(async (tx) => {
+    // 1. Update the request
+    await tx.update(deviceRequests)
+      .set({
+        status: 'completed',
+        linkedDeviceId: linkedDeviceId || null,
+        completedBy: adminId,
+        completedAt: new Date(),
+        updatedAt: new Date(),
+      })
+      .where(eq(deviceRequests.id, id));
+
+    // 2. If a device was linked, update its status + purpose + assignedTo
+    if (linkedDeviceId) {
+      // Get requester name for assignedTo
+      const [requester] = await tx.select({
+        firstName: users.firstName,
+        lastName: users.lastName,
+      }).from(users).where(eq(users.id, request.requestedBy));
+
+      const assignedTo = requester
+        ? `${requester.firstName} ${requester.lastName}`
+        : undefined;
+
+      await tx.update(devices)
+        .set({
+          status: 'inactive',
+          purpose: request.purpose,
+          ...(assignedTo && { assignedTo }),
+          lastUpdatedBy: adminId,
+          updatedAt: new Date(),
+        })
+        .where(eq(devices.id, linkedDeviceId));
+
+      // 3. Log device audit entry
+      await logAuditEntry(tx, {
+        userId: adminId,
+        module: 'devices',
+        action: 'status_changed',
+        entityType: 'device',
+        entityId: linkedDeviceId,
+        changes: {
+          before: { status: 'active' },
+          after: { status: 'inactive', assignedTo, purpose: request.purpose },
+        },
+      });
+    }
+  });
+
+  // 4. Send Slack notification (outside transaction)
+  await notifyRequestCompleted(request, linkedDeviceId);
+}
+```
+
+---
+
+## 3. Purpose as Dropdown in RequestDeviceModal
+
+### Current
+Free-text `<Textarea>` with placeholder "Describe the purpose..."
+
+### Target
+Dropdown with same options as Add/Edit device form + "Other" manual fallback:
+
+**Options (shared constant — extract to `src/constants/deviceOptions.ts`):**
+```ts
+export const PURPOSE_OPTIONS = [
+  { value: 'Engineering',  label: 'Engineering' },
+  { value: 'Testing',      label: 'Testing' },
+  { value: 'Production',   label: 'Production' },
+  { value: 'Marketing',    label: 'Marketing' },
+  { value: 'Sales',        label: 'Sales' },
+  { value: 'onPrem',       label: 'On-Prem' },
+  { value: '__other__',    label: 'Other (enter manually)' },
+];
+```
+
+> Note: "To Be Repaired" is excluded from request form — it's only relevant in inventory management.
+
+**Behaviour:**
+- Select from dropdown → sets `purpose`
+- Select "Other" → shows a `<Textarea>` for free text
+- State: `const [useManualPurpose, setUseManualPurpose] = useState(false)`
+
+**Zod schema change:**
+```ts
+purpose: z.string().min(1, 'Purpose is required'),   // was min(10)
+```
+
+**Extract shared constant:** both `RegisterDevicePage.tsx` and `EditDeviceModal.tsx` define their own `purposeOptions` array. Extract to a shared constant file so all three forms stay in sync.
+
+### Files to change
+- `knoxadmin-client/src/constants/deviceOptions.ts` — NEW — shared `PURPOSE_OPTIONS`, `DEVICE_TYPE_OPTIONS`, `PLATFORM_OPTIONS`
+- `knoxadmin-client/src/components/devices/RequestDeviceModal.tsx` — replace textarea with dropdown + manual fallback
+- `knoxadmin-client/src/pages/devices/RegisterDevicePage.tsx` — import from shared constant (optional cleanup)
+- `knoxadmin-client/src/components/devices/EditDeviceModal.tsx` — import from shared constant (optional cleanup)
+
+---
+
+## 4. Purpose in Notifications, Modals, and Reject Popup
+
+### Slack notifications
+
+All four events should show **Purpose** in the message body.
+
+**Updated Slack message format:**
+
+```
+📋 New Device Request — 22 Mar 2026
+Requested by:  Ginil Jose
+Device:        Android Mobile · Android 13
+Purpose:       Testing              ← ADD THIS
+Status:        Pending
+
+✅ Device Request Approved — 22 Mar 2026
+Requested by: Ginil Jose  |  Approved by: Admin
+Device: Android Mobile · Android 13
+Purpose: Testing             ← ADD THIS
+
+❌ Device Request Rejected — 22 Mar 2026
+Requested by: Ginil Jose  |  Rejected by: Admin
+Device: Android Mobile · Android 13
+Purpose: Testing             ← ADD THIS
+Reason: Not enough stock
+
+📦 Device Request Completed — 22 Mar 2026
+Requested by: Ginil Jose  |  Completed by: Admin
+Device allocated: A133 — Samsung Galaxy S22 Ultra
+Purpose: Testing             ← ADD THIS
+```
+
+### RejectRequestModal
+
+Add a read-only summary of the request being rejected:
+```tsx
+<div className="mb-4 p-3 bg-gray-50 rounded-lg border text-sm">
+  <div><span className="font-medium">Device:</span> {request.platform} {request.deviceType}</div>
+  <div><span className="font-medium">Purpose:</span> {request.purpose}</div>
+  {request.osVersion && <div><span className="font-medium">OS:</span> {request.osVersion}</div>}
+</div>
+```
+
+### CompleteRequestModal
+
+Already shows device search. Add a summary of what's being completed at the top:
+```tsx
+<div className="mb-4 p-3 bg-blue-50 rounded-lg border border-blue-200 text-sm">
+  <div><span className="font-medium">Requested:</span> {request.platform} {request.deviceType}</div>
+  <div><span className="font-medium">Purpose:</span> {request.purpose}</div>
+  {request.osVersion && <div><span className="font-medium">OS Version:</span> {request.osVersion}+</div>}
+</div>
+```
+
+---
+
+## Files Changed Summary
+
+### Backend
+| File | Change |
+|---|---|
+| `src/modules/devices/devices.service.ts` | Add `suggestDevices()` function |
+| `src/modules/devices/devices.routes.ts` | Add `GET /devices/suggest` route (before `/:id`) |
+| `src/modules/device-requests/device-requests.service.ts` | `completeRequest()` — update device status/purpose/assignedTo in transaction, log audit |
+
+### Frontend
+| File | Change |
+|---|---|
+| `src/constants/deviceOptions.ts` | NEW — shared `PURPOSE_OPTIONS` constant |
+| `src/types/device.types.ts` | Add `SuggestedDevice` type |
+| `src/api/devices.ts` | Add `suggestDevices()` API function |
+| `src/components/devices/CompleteRequestModal.tsx` | Accept `request` prop, use `suggestDevices`, show criteria summary, enhanced device row |
+| `src/components/devices/RequestDeviceModal.tsx` | Replace purpose textarea with dropdown + manual fallback |
+| `src/components/devices/RejectRequestModal.tsx` | Add request context summary above reason input |
+| `knoxadmin/src/modules/device-requests/device-requests.service.ts` | Update Slack messages to include `purpose` |
+
+---
+
+## UX Flow
+
+```
+Admin opens CompleteRequestModal for an approved Android 13 request
+  ↓
+Modal shows request summary: Android Mobile · Android 13 · Purpose: Testing
+  ↓
+Device search dropdown fetches GET /devices/suggest?platform=Android&osVersion=13
+  ↓
+Dropdown shows: A133 (Android 14), A101 (Android 13), A002 (Android 15)
+  - Sorted: exact match (13) first, then higher (14, 15)
+  ↓
+Admin selects A133
+  ↓
+Admin clicks [Complete Request]
+  ↓
+Backend:
+  1. device_requests.status → completed, linked_device_id → A133
+  2. devices[A133].status → inactive
+  3. devices[A133].purpose → "Testing"
+  4. devices[A133].assigned_to → request.requestingFor (e.g. "Ginil Jose" or whoever was entered)
+  5. Audit log entry for device A133
+  6. Slack: "📦 Completed — A133 allocated — Purpose: Testing"
+  ↓
+UI: Request row shows 🟢 Completed · A133 chip
+```
+
+---
+
+## Edge Cases
+
+| Scenario | Handling |
+|---|---|
+| Complete without selecting a device | Allowed — device side-effects skipped |
+| Device already checked out | Prevented by `suggestDevices` returning only `active` devices |
+| OS version not a simple number (e.g. "17.2.1") | Cast as float — "17.2" works; "17.2.1" would need string comparison fallback |
+| Request purpose was manual free text | Stored as-is, passed to device `purpose` field |
+| Multiple requests for same device | Admin can only select from currently active devices — second request can't steal the device |
+
+---
+
+## Addendum: Deep-link URL in Slack Notifications
+
+**Date:** 2026-03-22
+
+### Goal
+Every Slack notification includes a clickable link that takes the user directly to `/devices?tab=requests` (filtered to the relevant request). If the user is not logged in, they land on the login page and are redirected back to the original URL after successful login.
+
+---
+
+### URL Format
+
+```
+{FRONTEND_URL}/devices?tab=requests&requestId={id}
+```
+
+Examples:
+```
+https://app.internal/devices?tab=requests&requestId=a1b2c3d4-e5f6-7890-abcd-ef1234567890
+```
+
+The `requestId` param is used by the frontend to auto-scroll/highlight the specific request row (see frontend section).
+
+---
+
+### Backend Changes
+
+#### `device-requests.service.ts` — all notification functions
+
+Use `env.FRONTEND_URL` to build the link and append it to every Slack message:
+
+```ts
+import { env } from '../../config/env.js';
+
+const requestUrl = `${env.FRONTEND_URL}/devices?tab=requests&requestId=${updated.id}`;
+```
+
+Add as the last line in each Slack message block:
+```ts
+`📋 New Device Request — ${date}\n\n...\n\n<${requestUrl}|View Request →>`
+```
+
+Slack's `<URL|label>` syntax renders as a hyperlink in the message.
+
+**All four events:**
+
+```
+📋 New Device Request — 22 Mar 2026
+...
+<https://app.internal/devices?tab=requests&requestId=abc|View Request →>
+
+✅ Device Request Approved — 22 Mar 2026
+...
+<https://app.internal/devices?tab=requests&requestId=abc|View Request →>
+
+❌ Device Request Rejected — 22 Mar 2026
+...
+<https://app.internal/devices?tab=requests&requestId=abc|View Request →>
+
+📦 Device Request Completed — 22 Mar 2026
+...
+<https://app.internal/devices?tab=requests&requestId=abc|View Request →>
+```
+
+No new env vars needed — `FRONTEND_URL` already validated in `src/config/env.ts`.
+
+---
+
+### Frontend Changes
+
+#### 1. `AppLayout.tsx` — preserve URL on unauthenticated redirect
+
+**Current:**
+```ts
+return <Navigate to="/login" replace />;
+```
+
+**Change to:**
+```ts
+return <Navigate to={`/login?returnUrl=${encodeURIComponent(location.pathname + location.search)}`} replace />;
+```
+
+This passes the full original URL (path + query string) as `returnUrl` to the login page.
+
+#### 2. `LoginPage.tsx` — redirect to `returnUrl` after login
+
+`useSearchParams` is already imported. After successful login, read the param and navigate there:
+
+```ts
+const [searchParams] = useSearchParams();
+const returnUrl = searchParams.get('returnUrl');
+
+// after login succeeds:
+navigate(returnUrl || '/devices');
+```
+
+**Security note:** validate that `returnUrl` is a relative path (starts with `/`) to prevent open redirect:
+```ts
+const safeReturn = returnUrl && returnUrl.startsWith('/') ? returnUrl : '/devices';
+navigate(safeReturn);
+```
+
+#### 3. `DeviceListPage.tsx` — read `?tab=requests` from URL
+
+**Current:** tab is pure local state, always starts on `'inventory'`.
+
+**Change:** initialise from URL query param, and update the URL when tab changes:
+
+```ts
+const [searchParams, setSearchParams] = useSearchParams();
+
+const [activeTab, setActiveTab] = useState<'inventory' | 'requests'>(
+  searchParams.get('tab') === 'requests' ? 'requests' : 'inventory'
+);
+
+const handleTabChange = (tab: 'inventory' | 'requests') => {
+  setActiveTab(tab);
+  setSearchParams(tab === 'requests' ? { tab: 'requests' } : {}, { replace: true });
+};
+```
+
+Use `handleTabChange` in place of bare `setActiveTab` calls.
+
+#### 4. `DeviceRequestsTab.tsx` — highlight request from `requestId` param
+
+Read `requestId` from URL and visually highlight that row on mount:
+
+```ts
+const [searchParams] = useSearchParams();
+const highlightId = searchParams.get('requestId');
+```
+
+On the table row:
+```tsx
+<tr
+  key={request.id}
+  ref={request.id === highlightId ? highlightRef : null}
+  className={request.id === highlightId ? 'bg-yellow-50 ring-1 ring-yellow-300' : ''}
+>
+```
+
+Auto-scroll to highlighted row on mount:
+```ts
+const highlightRef = useRef<HTMLTableRowElement>(null);
+useEffect(() => {
+  if (highlightRef.current) {
+    highlightRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }
+}, [requests]); // run after requests load
+```
+
+---
+
+### Files Changed
+
+| File | Change |
+|---|---|
+| `knoxadmin/src/modules/device-requests/device-requests.service.ts` | Append `<URL\|View Request →>` to all 4 Slack messages |
+| `knoxadmin-client/src/components/layout/AppLayout.tsx` | Pass `returnUrl` when redirecting to login |
+| `knoxadmin-client/src/pages/auth/LoginPage.tsx` | Read `returnUrl`, navigate there after login |
+| `knoxadmin-client/src/pages/devices/DeviceListPage.tsx` | Init tab from `?tab=` param, sync tab change to URL |
+| `knoxadmin-client/src/components/devices/DeviceRequestsTab.tsx` | Highlight + scroll to `?requestId=` row on load |
+
+---
+
+### UX Flow
+
+```
+Slack notification arrives for "New Device Request"
+  ↓
+User clicks <View Request →> link
+  ↓
+Browser opens: /devices?tab=requests&requestId=abc123
+  ↓
+  [If not logged in]
+  AppLayout intercepts → redirects to /login?returnUrl=/devices?tab=requests&requestId=abc123
+  User logs in → LoginPage reads returnUrl → navigates to /devices?tab=requests&requestId=abc123
+  ↓
+  [If already logged in]
+  DeviceListPage reads ?tab=requests → opens Requests tab
+  DeviceRequestsTab reads ?requestId=abc123 → scrolls to + highlights that row in yellow
+```
+
+---
+
+## Addendum: "Requesting For" Field
+
+**Date:** 2026-03-22
+
+### Rationale
+The requester (`requested_by`) tracks who submitted the request (for accountability). "Requesting For" (`requesting_for`) tracks who actually receives the device — could be the same person or someone else (new joiner, contractor, teammate). This value flows directly into `devices.assigned_to` at completion.
+
+Using free text (not a user UUID) intentionally — the recipient may not have a Knox account.
+
+---
+
+### DB Change
+
+New column on `device_requests`:
+```sql
+ALTER TABLE device_requests ADD COLUMN requesting_for varchar(255);
+```
+
+Migration file: `drizzle/0012_device_requests_requesting_for.sql`
+
+**Nullable** — if blank, fall back to requester's full name at completion time. Existing rows are unaffected.
+
+**Drizzle schema** (`src/db/schema/device-requests.ts`):
+```ts
+requestingFor: varchar('requesting_for', { length: 255 }),
+```
+
+---
+
+### Backend Changes
+
+#### `device-requests.service.ts` — `createRequest()`
+Accept and store `requestingFor` from input:
+```ts
+await db.insert(deviceRequests).values({
+  ...
+  requestingFor: input.requestingFor || null,
+});
+```
+
+#### `device-requests.routes.ts` — create body schema
+```ts
+requestingFor: { type: 'string', maxLength: 255 },   // optional
+```
+
+#### `device-requests.service.ts` — `completeRequest()`
+When updating the linked device, use `requestingFor` (with fallback):
+```ts
+const assignedTo = request.requestingFor
+  || (requester ? `${requester.firstName} ${requester.lastName}` : undefined);
+
+await tx.update(devices).set({
+  status: 'inactive',
+  purpose: request.purpose,
+  ...(assignedTo && { assignedTo }),
+  ...
+});
+```
+
+#### Slack notification — include "Requesting For"
+All four Slack events should surface this field when it differs from the requester:
+
+```
+📋 New Device Request
+Requested by:   Ginil Jose
+Requesting for: John Smith          ← show if different from requested_by name
+Device:         Android Mobile · Android 13
+Purpose:        Testing
+```
+
+If `requesting_for` is blank or same as requester name, omit the line.
+
+---
+
+### Frontend Changes
+
+#### `RequestDeviceModal.tsx`
+
+**Zod schema** — add field:
+```ts
+requestingFor: z.string().min(1, 'Requesting for is required'),
+```
+
+**Auth store** — read logged-in user name:
+```ts
+const { user } = useAuthStore();
+```
+
+**Default value** on form init:
+```ts
+defaultValues: {
+  requestingFor: user ? `${user.firstName} ${user.lastName}` : '',
+  ...
+}
+```
+
+**Form field** — place between Purpose and the submit footer:
+```tsx
+<div>
+  <label className="block text-sm font-medium text-gray-900 mb-2">
+    Requesting For *
+  </label>
+  <Input
+    {...register('requestingFor')}
+    placeholder="Full name of the person this device is for"
+  />
+  <p className="mt-1 text-xs text-gray-500">
+    Pre-filled with your name. Change if requesting on behalf of someone else.
+  </p>
+  {errors.requestingFor && (
+    <p className="mt-1 text-sm text-red-600">{errors.requestingFor.message}</p>
+  )}
+</div>
+```
+
+#### `DeviceRequestsTab.tsx`
+
+Add **"Requesting For"** column in admin view (between Purpose and Status):
+
+| Requested By | Device | OS | Purpose | Requesting For | Status | Actions |
+|---|---|---|---|---|---|---|
+| Ginil Jose | Android Mobile | 13 | Testing | John Smith | 🟡 Pending | … |
+
+If `requestingFor` equals requester name or is blank — show `—`.
+
+#### `CompleteRequestModal.tsx`
+
+Add to the request summary header:
+```tsx
+<div>
+  <span className="font-medium">Assigning to:</span> {request.requestingFor || '—'}
+</div>
+```
+
+This confirms to the admin which name will be set as `assigned_to` on the device.
+
+#### `RejectRequestModal.tsx`
+
+Include in the request context summary:
+```tsx
+{request.requestingFor && (
+  <div><span className="font-medium">Requesting for:</span> {request.requestingFor}</div>
+)}
+```
+
+#### Types: `device-request.types.ts`
+```ts
+export interface DeviceRequest {
+  ...
+  requestingFor?: string | null;
+}
+
+export interface CreateDeviceRequestInput {
+  ...
+  requestingFor: string;
+}
+```
+
+---
+
+### Files Changed (Addendum)
+
+| File | Change |
+|---|---|
+| `drizzle/0012_device_requests_requesting_for.sql` | NEW — `ALTER TABLE` migration |
+| `src/db/schema/device-requests.ts` | Add `requestingFor` column |
+| `src/modules/device-requests/device-requests.service.ts` | Store + use `requestingFor` in create + complete |
+| `src/modules/device-requests/device-requests.routes.ts` | Add to create body schema |
+| `src/types/device-request.types.ts` | Add `requestingFor` to types |
+| `src/components/devices/RequestDeviceModal.tsx` | Add "Requesting For" field, prefill from auth store |
+| `src/components/devices/DeviceRequestsTab.tsx` | Add "Requesting For" column |
+| `src/components/devices/CompleteRequestModal.tsx` | Show "Assigning to" in summary |
+| `src/components/devices/RejectRequestModal.tsx` | Show in request context block |
+
+---
+
+# Plan: Device Requests UX Polish — Request #, Details Modal, Slack Links, Tab Refresh
+
+**STATUS:** ✅ COMPLETED (2026-03-22)
+
+## Changes Implemented
+
+### 1. Request Number (`request_no` serial field)
+- Added `request_no SERIAL` column to `device_requests` table, sequence starts at 1000
+- Migration: `ALTER TABLE device_requests ADD COLUMN request_no SERIAL; ALTER SEQUENCE ... RESTART WITH 1000`
+- Drizzle schema updated: `requestNo: serial('request_no').notNull()`
+- Frontend type: `requestNo: number` added to `DeviceRequest`
+- Exposed in API list response schema
+
+**Shown everywhere:**
+- Slack notifications: `Request #: 1002` (all 4 events)
+- Device comment on allocation: `via request #1002`
+- Reject modal title: `Reject Request #1002`
+- Complete modal title: `Complete Request #1002`
+- Rejection details modal: `#1002` instead of UUID
+- Requests table: `#` column as first column
+
+### 2. Slack Deep-link URL
+- All 4 Slack notifications (submit, approve, reject, complete) include `<View Request →>` link
+- URL format: `${FRONTEND_URL}/devices?tab=requests&requestId={uuid}`
+- Uses existing `env.FRONTEND_URL`
+- `requestUrl()` helper function in `device-requests.service.ts`
+
+### 3. Request Details Modal (row click)
+- New component: `RequestDetailsModal.tsx`
+- Click any row in the requests table → opens details popup
+- Shows: `#requestNo`, status badge, submitted date, device type/platform/OS/purpose/requesting for/requested by
+- Status-specific sections: green block (approved), blue block (completed + device allocated), red block (rejected + reason highlighted)
+- Action buttons cell has `e.stopPropagation()` so clicks don't bubble to row handler
+- Rejection details button also has `e.stopPropagation()`
+
+### 4. Tab Refresh on Switch
+- `DeviceListPage` now re-fetches devices + stats when switching back to Inventory tab
+- `useEffect` watches `activeTab`, triggers `fetchDevices()` + `fetchStats()` when `activeTab === 'inventory'`
+
+### 5. RejectRequestModal context summary
+- Now accepts `request: DeviceRequest` (not just `requestId`)
+- Shows device + purpose + requesting for summary above reason input
+- `DeviceRequestsTab` state changed from `rejectingRequestId: string` to `rejectingRequest: DeviceRequest`
+
+## Files Changed
+
+| File | Change |
+|---|---|
+| `knoxadmin/drizzle/0012_device_requests_requesting_for.sql` | Added `request_no SERIAL` (same migration file) |
+| `knoxadmin/src/db/schema/device-requests.ts` | Add `requestNo: serial` |
+| `knoxadmin/src/modules/device-requests/device-requests.service.ts` | `requestUrl()` helper, `#requestNo` in all Slack messages + comment, `View Request →` link |
+| `knoxadmin-client/src/types/device-request.types.ts` | Add `requestNo: number` |
+| `knoxadmin-client/src/components/devices/RequestDetailsModal.tsx` | NEW — row click details popup |
+| `knoxadmin-client/src/components/devices/DeviceRequestsTab.tsx` | Row click → details modal, `rejectingRequest` full object, `#requestNo` column, stopPropagation on actions |
+| `knoxadmin-client/src/components/devices/RejectRequestModal.tsx` | Accept `request` prop, show context, `#requestNo` in title |
+| `knoxadmin-client/src/components/devices/CompleteRequestModal.tsx` | `#requestNo` in title |
+| `knoxadmin-client/src/components/devices/RejectionDetailsModal.tsx` | `#requestNo` replacing UUID |
+| `knoxadmin-client/src/components/devices/index.ts` | Export `RequestDetailsModal` |
+| `knoxadmin-client/src/pages/devices/DeviceListPage.tsx` | Re-fetch on tab switch to inventory |
+
+
+---
+
+# Plan: On-Prem License Key Request Feature
+
+**STATUS:** 🔲 PENDING
+
+## Overview
+
+Allow CSM users (and anyone with on-prem access) to request a license key against a specific on-prem deployment. Admins generate and upload the license file against the request, which auto-completes it. CSMs can then download the file (time-limited 10-day token). Each request is visible in a dedicated Requests tab on the new OnPrem Detail Page.
+
+---
+
+## User Journey
+
+1. CSM opens on-prem detail page (`/onprem/:id`)
+2. Clicks "Generate License" button → opens `RequestLicenseModal`
+3. Fills in: license start date, end date, number of projects → submits
+4. Request appears in "Requests" tab with status `pending`
+5. Slack notification fires to admin channel
+6. Admin opens request details → uploads license file via the detail popup
+7. Upload auto-completes the request → sets status `completed` → Slack notification
+8. CSM sees status `completed` with download button → clicks → gets 10-day download token → downloads file
+9. Any party can `cancel` a pending request
+
+---
+
+## Database
+
+### New Table: `onprem_license_requests`
+
+```ts
+// schema/onprem.ts additions
+
+export const licenseRequestStatusEnum = pgEnum('license_request_status', [
+  'pending',
+  'completed',
+  'cancelled',
+]);
+
+export const onpremLicenseRequests = pgTable('onprem_license_requests', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  requestNo: serial('request_no').notNull(),            // human-readable ID, starts at 1000
+  deploymentId: uuid('deployment_id')
+    .notNull()
+    .references(() => onpremDeployments.id, { onDelete: 'cascade' }),
+  requestedBy: uuid('requested_by').references(() => users.id),
+  status: licenseRequestStatusEnum('status').notNull().default('pending'),
+
+  // Request fields
+  licenseStartDate: timestamp('license_start_date').notNull(),
+  licenseEndDate: timestamp('license_end_date').notNull(),
+  numberOfProjects: integer('number_of_projects').notNull(),
+  notes: text('notes'),
+
+  // File (populated on completion)
+  fileName: varchar('file_name', { length: 255 }),
+  filePath: text('file_path'),          // local FS path, not exposed to client
+  fileSize: integer('file_size'),
+  uploadedBy: uuid('uploaded_by').references(() => users.id),
+  uploadedAt: timestamp('uploaded_at'),
+
+  // Cancellation
+  cancelledBy: uuid('cancelled_by').references(() => users.id),
+  cancelledAt: timestamp('cancelled_at'),
+  cancellationReason: text('cancellation_reason'),
+
+  // Completion
+  completedAt: timestamp('completed_at'),
+
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+  updatedAt: timestamp('updated_at').notNull().defaultNow(),
+});
+
+export type OnpremLicenseRequest = typeof onpremLicenseRequests.$inferSelect;
+export type LicenseRequestStatus = (typeof licenseRequestStatusEnum.enumValues)[number];
+```
+
+### Migration file: `drizzle/0013_onprem_license_requests.sql`
+
+```sql
+CREATE TYPE license_request_status AS ENUM ('pending', 'completed', 'cancelled');
+
+CREATE TABLE onprem_license_requests (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  request_no SERIAL NOT NULL,
+  deployment_id UUID NOT NULL REFERENCES onprem_deployments(id) ON DELETE CASCADE,
+  requested_by UUID REFERENCES users(id),
+  status license_request_status NOT NULL DEFAULT 'pending',
+  license_start_date TIMESTAMP NOT NULL,
+  license_end_date TIMESTAMP NOT NULL,
+  number_of_projects INTEGER NOT NULL,
+  notes TEXT,
+  file_name VARCHAR(255),
+  file_path TEXT,
+  file_size INTEGER,
+  uploaded_by UUID REFERENCES users(id),
+  uploaded_at TIMESTAMP,
+  cancelled_by UUID REFERENCES users(id),
+  cancelled_at TIMESTAMP,
+  cancellation_reason TEXT,
+  completed_at TIMESTAMP,
+  created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+);
+
+ALTER SEQUENCE onprem_license_requests_request_no_seq RESTART WITH 1000;
+```
+
+---
+
+## Backend Module: `src/modules/onprem-license-requests/`
+
+### Files
+
+| File | Purpose |
+|---|---|
+| `onprem-license-requests.routes.ts` | HTTP routes |
+| `onprem-license-requests.service.ts` | Business logic |
+| `onprem-license-requests.schema.ts` | Fastify/zod validation schemas |
+
+### API Endpoints
+
+| Method | Path | Auth | Description |
+|---|---|---|---|
+| `POST` | `/onprem/:deploymentId/license-requests` | onprem access | Create request |
+| `GET` | `/onprem/:deploymentId/license-requests` | onprem access | List requests for deployment |
+| `GET` | `/onprem/:deploymentId/license-requests/:id` | onprem access | Get single request |
+| `POST` | `/onprem/:deploymentId/license-requests/:id/upload` | admin | Upload license file (completes request) |
+| `POST` | `/onprem/:deploymentId/license-requests/:id/cancel` | onprem access | Cancel a pending request |
+| `GET` | `/onprem/license-requests/:id/download` | token query param | Download license file (token-based) |
+| `POST` | `/onprem/:deploymentId/license-requests/:id/generate-token` | onprem access | Generate 10-day download token |
+
+### Service Functions
+
+```ts
+// Create request
+createLicenseRequest(deploymentId, input, userId): Promise<OnpremLicenseRequest>
+
+// List requests for a deployment (paginated, sorted by createdAt DESC)
+listLicenseRequests(deploymentId, userId, role): Promise<{ requests, total }>
+
+// Upload license file — auto-completes request
+uploadLicenseFile(requestId, deploymentId, file, adminUserId): Promise<OnpremLicenseRequest>
+// Steps:
+// 1. Validate request is 'pending'
+// 2. Save file to local FS: uploads/license-files/{deploymentId}/{requestId}/{filename}
+// 3. Update request: status='completed', fileName, filePath, fileSize, uploadedBy, uploadedAt, completedAt
+// 4. Update onpremDeployments.license jsonb: { startDate, endDate, numberOfApps }
+// 5. Insert onpremComments: "License generated for request #XXXX (valid: startDate to endDate, X projects)"
+// 6. Create audit log entry
+// 7. Send Slack notification
+
+// Cancel request
+cancelLicenseRequest(requestId, userId, reason?): Promise<OnpremLicenseRequest>
+
+// Generate time-based download token (10 days, stored in-memory or short-lived JWT)
+generateDownloadToken(requestId, userId): Promise<{ token: string; expiresAt: string }>
+
+// Download file (validates token, streams file)
+downloadLicenseFile(requestId, token): Promise<{ filePath, fileName, mimeType }>
+```
+
+### File Storage
+
+- Local filesystem path: `uploads/license-files/{deploymentId}/{requestId}/{originalFileName}`
+- The `filePath` stored in DB is the relative path from the `uploads/` directory
+- `GET /onprem/license-requests/:id/download?token=xxx` validates token and streams file using `fs.createReadStream`
+- Token: signed JWT with `requestId`, `userId`, `exp: now + 10 days`
+- Use `JWT_SECRET` from env for token signing
+
+### `onpremDeployments.license` update on completion
+
+When a license request is completed via file upload:
+```ts
+await db.update(onpremDeployments)
+  .set({
+    license: {
+      ...existingLicense,
+      startDate: request.licenseStartDate.toISOString(),
+      endDate: request.licenseEndDate.toISOString(),
+      numberOfApps: request.numberOfProjects,
+    },
+    updatedAt: new Date(),
+  })
+  .where(eq(onpremDeployments.id, deploymentId));
+```
+
+### Slack Notifications
+
+1. **Request submitted:**
+   `📋 License Key Request — {date}\n\n*Request #:* {no}\nClient: {clientName}\nRequested by: {name} ({email})\nLicense: {startDate} to {endDate} · {N} projects\n\n<{url}|View Request →>`
+
+2. **Request cancelled:**
+   `❌ License Request Cancelled — {date}\n\n*Request #:* {no}\nClient: {clientName}\nCancelled by: {name}\n{reason}\n\n<{url}|View Request →>`
+
+3. **Request completed (file uploaded):**
+   `✅ License Key Generated — {date}\n\n*Request #:* {no}\nClient: {clientName}\nGenerated by: {name}\nFile: {fileName}\nValid: {startDate} to {endDate}\n\n<{url}|View Request →>`
+
+Deep-link URL: `${FRONTEND_URL}/onprem/{deploymentId}?tab=requests&requestId={id}`
+
+### Activity Log Comment (auto-inserted on each status change)
+
+Insert into `onprem_comments`:
+- On create: `License key requested by {name} for period {startDate} – {endDate} ({N} projects). Request #{no}.`
+- On cancel: `License request #{no} cancelled by {name}.{reason ? ' Reason: ' + reason : ''}`
+- On complete: `License key generated by {name} for request #{no}. Valid: {startDate} – {endDate}.`
+
+---
+
+## New Frontend Page: OnPrem Detail Page
+
+### Route
+
+`/onprem/:id` (new page, accessible on click of any row in the onprem listing)
+
+### Page Structure
+
+```
+OnpremDetailPage
+├── Header: clientName | status badge | "Generate License" button | "Edit" button
+├── Tabs: [Details] [Requests] [History]
+│
+├── Details tab (default)
+│   └── All existing fields displayed in read-only sections (same sections as edit form)
+│       Client & Ownership · Deployment & Versioning · License Info · Infrastructure · Network · etc.
+│
+├── Requests tab
+│   └── LicenseRequestsTab component (table + modals)
+│
+└── History tab
+    └── OnpremComments + version history + status history
+```
+
+### Clicking a row in the on-prem listing
+
+Update `OnpremListingPage` row `onClick` → navigate to `/onprem/:id` (instead of opening an edit modal or nothing).
+
+---
+
+## Frontend Components
+
+### 1. `RequestLicenseModal`
+
+Opened from the detail page "Generate License" button or Requests tab "New Request" button.
+
+```tsx
+interface RequestLicenseModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  deploymentId: string;
+  clientName: string;
+  onSuccess: () => void;
+}
+```
+
+Fields:
+- License Start Date (date picker, required)
+- License End Date (date picker, required, must be after start)
+- Number of Projects (number input, required, min 1)
+- Notes (textarea, optional)
+
+On submit: `POST /onprem/:deploymentId/license-requests`
+
+### 2. `LicenseRequestDetailsModal`
+
+Click any row in the Requests tab → opens this modal.
+
+```tsx
+interface LicenseRequestDetailsModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  request: OnpremLicenseRequest | null;
+  isAdmin: boolean;
+  onFileUploaded: () => void;
+}
+```
+
+Sections:
+- Header: `Request #XXXX`, status badge, submitted date
+- Request details: requested by, license period, number of projects, notes
+- **If `pending` and admin**: "Upload License File" section — file input + upload button
+- **If `completed`**: download button (calls generate-token → downloads)
+- **If `cancelled`**: show cancellation reason + who cancelled
+
+### 3. `LicenseRequestsTab`
+
+Table showing all license requests for a deployment.
+
+Columns: `#` | Requested By | License Period | Projects | Status | Requested At | Actions
+
+Actions (admin only):
+- `pending`: Upload File button (opens details modal focused on upload)
+- `completed`: Download button
+
+Row click → opens `LicenseRequestDetailsModal`
+
+### 4. `OnpremDetailPage` (new page)
+
+```tsx
+// src/pages/onprem/OnpremDetailPage.tsx
+
+const tabs = ['details', 'requests', 'history'];
+// URL param: ?tab=requests&requestId=xxx opens requests tab + details modal for that request
+```
+
+---
+
+## Frontend Store: `onpremLicenseRequestStore`
+
+```ts
+// src/stores/onpremLicenseRequestStore.ts
+
+interface OnpremLicenseRequest {
+  id: string;
+  requestNo: number;
+  deploymentId: string;
+  requestedByUser?: { firstName: string; lastName: string; email: string } | null;
+  status: 'pending' | 'completed' | 'cancelled';
+  licenseStartDate: string;
+  licenseEndDate: string;
+  numberOfProjects: number;
+  notes?: string | null;
+  fileName?: string | null;
+  uploadedByUser?: { firstName: string; lastName: string } | null;
+  uploadedAt?: string | null;
+  cancelledByUser?: { firstName: string; lastName: string } | null;
+  cancelledAt?: string | null;
+  cancellationReason?: string | null;
+  completedAt?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+interface State {
+  requests: OnpremLicenseRequest[];
+  isLoading: boolean;
+  fetchRequests: (deploymentId: string) => Promise<void>;
+  createRequest: (deploymentId: string, input: CreateLicenseRequestInput) => Promise<void>;
+  uploadFile: (deploymentId: string, requestId: string, file: File) => Promise<void>;
+  cancelRequest: (deploymentId: string, requestId: string, reason?: string) => Promise<void>;
+  downloadFile: (requestId: string) => Promise<void>;   // generate token then trigger download
+}
+```
+
+---
+
+## Frontend API: `onpremLicenseRequestsApi`
+
+```ts
+// src/api/onpremLicenseRequests.ts
+
+export const onpremLicenseRequestsApi = {
+  list: (deploymentId: string) => apiClient.get(`/onprem/${deploymentId}/license-requests`),
+  create: (deploymentId: string, data: CreateLicenseRequestInput) =>
+    apiClient.post(`/onprem/${deploymentId}/license-requests`, data),
+  upload: (deploymentId: string, requestId: string, file: File) => {
+    const form = new FormData();
+    form.append('file', file);
+    return apiClient.post(`/onprem/${deploymentId}/license-requests/${requestId}/upload`, form, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+  },
+  cancel: (deploymentId: string, requestId: string, reason?: string) =>
+    apiClient.post(`/onprem/${deploymentId}/license-requests/${requestId}/cancel`, { reason }),
+  generateToken: (requestId: string) =>
+    apiClient.post(`/onprem/license-requests/${requestId}/generate-token`),
+  // Download uses token in URL, triggered via window.open or anchor tag
+  getDownloadUrl: (requestId: string, token: string) =>
+    `${API_BASE_URL}/onprem/license-requests/${requestId}/download?token=${token}`,
+};
+```
+
+---
+
+## Files to Create/Modify
+
+### Backend (knoxadmin)
+
+| File | Action | Description |
+|---|---|---|
+| `src/db/schema/onprem.ts` | Modify | Add `licenseRequestStatusEnum`, `onpremLicenseRequests` table + types |
+| `drizzle/0013_onprem_license_requests.sql` | Create | Migration |
+| `src/db/schema/index.ts` | Modify | Export new table/types |
+| `src/modules/onprem-license-requests/onprem-license-requests.routes.ts` | Create | All routes |
+| `src/modules/onprem-license-requests/onprem-license-requests.service.ts` | Create | Business logic |
+| `src/modules/onprem-license-requests/onprem-license-requests.schema.ts` | Create | Validation schemas |
+| `src/app.ts` | Modify | Register new plugin/routes |
+| `src/config/env.ts` | Modify | Ensure `JWT_SECRET` and `UPLOADS_DIR` are present |
+
+### Frontend (knoxadmin-client)
+
+| File | Action | Description |
+|---|---|---|
+| `src/types/onprem-license-request.types.ts` | Create | TS types for requests |
+| `src/api/onpremLicenseRequests.ts` | Create | API functions |
+| `src/api/index.ts` | Modify | Export new API |
+| `src/stores/onpremLicenseRequestStore.ts` | Create | Zustand store |
+| `src/pages/onprem/OnpremDetailPage.tsx` | Create | Detail page with tabs |
+| `src/components/onprem/LicenseRequestsTab.tsx` | Create | Requests table |
+| `src/components/onprem/RequestLicenseModal.tsx` | Create | Create request form |
+| `src/components/onprem/LicenseRequestDetailsModal.tsx` | Create | Row click details + upload |
+| `src/components/onprem/LicenseRequestStatusBadge.tsx` | Create | Status badge (pending/completed/cancelled) |
+| `src/components/onprem/index.ts` | Modify | Export new components |
+| `src/router.tsx` (or equivalent) | Modify | Add `/onprem/:id` route |
+| `src/pages/onprem/OnpremListingPage.tsx` | Modify | Row click → navigate to detail page |
+
+---
+
+## Implementation Order
+
+1. **DB migration** — create table, run migration
+2. **Backend schema + types** — add to `onprem.ts`, export from index
+3. **Backend module** — create routes, service, schema (create → list → upload → cancel → download)
+4. **Register routes** in `app.ts`
+5. **Frontend types** — `onprem-license-request.types.ts`
+6. **Frontend API** — `onpremLicenseRequestsApi`
+7. **Frontend store** — `onpremLicenseRequestStore`
+8. **`LicenseRequestStatusBadge`** — simple component
+9. **`RequestLicenseModal`** — create request form
+10. **`LicenseRequestDetailsModal`** — view details + upload + download
+11. **`LicenseRequestsTab`** — table with pagination
+12. **`OnpremDetailPage`** — tabs: Details | Requests | History
+13. **Update router** — add `/onprem/:id` route
+14. **Update listing page** — row click navigates to detail page
+
+---
+
+## Open Questions / Decisions
+
+- **Token storage**: Use a signed JWT (no DB table needed). Include `requestId + userId + exp` in payload.
+- **File size limit**: Set to 50MB in multipart config (license files are small; this gives room).
+- **Who can cancel**: Anyone with onprem access (CSM or admin). Admins can cancel any; CSMs can cancel their own.
+- **History tab**: Reuse existing `onpremComments` component (already renders comments). Auto-inserted comments from license request actions will appear here naturally.
+- **`/onprem/:id` edit**: Detail page has an "Edit" button that links to existing `/onprem/:id/edit` page (no new edit page needed).
 

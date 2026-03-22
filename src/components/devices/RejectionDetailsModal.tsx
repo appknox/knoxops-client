@@ -32,12 +32,12 @@ export function RejectionDetailsModal({
   return (
     <Modal isOpen={isOpen} onClose={onClose} title="Rejection Details" size="md">
       <div className="p-6 space-y-6">
-        {/* Request ID */}
+        {/* Request # */}
         <div className="bg-gray-50 p-4 rounded-lg">
           <label className="block text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">
-            Request ID
+            Request
           </label>
-          <p className="text-sm font-mono text-gray-900 break-all">{request.id}</p>
+          <p className="text-sm font-semibold text-gray-900">#{request.requestNo}</p>
         </div>
 
         {/* Request Details */}

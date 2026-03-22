@@ -13,6 +13,7 @@ interface OnpremTableProps {
     totalPages: number;
   };
   onPageChange: (page: number) => void;
+  onRowClick?: (deployment: OnpremDeployment) => void;
   onEdit: (deployment: OnpremDeployment) => void;
   onDelete: (deployment: OnpremDeployment) => void;
   onViewHistory: (deployment: OnpremDeployment) => void;
@@ -36,6 +37,7 @@ const OnpremTable = ({
   deployments,
   pagination,
   onPageChange,
+  onRowClick,
   onEdit,
   onDelete,
   onViewHistory,
@@ -111,7 +113,11 @@ const OnpremTable = ({
               const shouldShowIndicator = deployment.clientStatus === 'active' && patchDaysAway !== null && patchDaysAway <= 5;
 
               return (
-              <tr key={deployment.id} className="hover:bg-gray-50">
+              <tr
+                key={deployment.id}
+                className={`hover:bg-gray-50 ${onRowClick ? 'cursor-pointer' : ''}`}
+                onClick={() => onRowClick?.(deployment)}
+              >
                 <td className="px-6 py-4 whitespace-nowrap">
                   <div className="flex items-center gap-3">
                     <div className="w-8 h-8 bg-primary-100 rounded-lg flex items-center justify-center">
@@ -185,7 +191,7 @@ const OnpremTable = ({
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                   {deployment.domainName || '-'}
                 </td>
-                <td className="px-6 py-4 whitespace-nowrap text-right">
+                <td className="px-6 py-4 whitespace-nowrap text-right" onClick={(e) => e.stopPropagation()}>
                   <div className="flex items-center justify-end gap-2">
                     {onDownload && (
                       <button

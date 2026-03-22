@@ -43,6 +43,13 @@ const DeviceListPage = () => {
     fetchStats();
   }, [fetchDevices, fetchStats]);
 
+  useEffect(() => {
+    if (activeTab === 'inventory') {
+      fetchDevices();
+      fetchStats();
+    }
+  }, [activeTab]);
+
   return (
     <div>
       {/* Header */}
