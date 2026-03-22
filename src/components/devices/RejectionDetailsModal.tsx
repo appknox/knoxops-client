@@ -81,7 +81,12 @@ export function RejectionDetailsModal({
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Rejected By
                 </label>
-                <p className="text-sm text-gray-600">{rejectedByUserName || 'Unknown'}</p>
+                <p className="text-sm text-gray-600">
+                  {rejectedByUserName ||
+                    (request.rejectedByUser
+                      ? `${request.rejectedByUser.firstName} ${request.rejectedByUser.lastName}`
+                      : 'Unknown')}
+                </p>
               </div>
               {request.rejectedAt && (
                 <div>
