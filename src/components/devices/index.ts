@@ -9,5 +9,6 @@ export { FetchDeviceWizard } from './FetchDeviceWizard';
 export { RequestDeviceModal } from './RequestDeviceModal';
 export { RejectRequestModal } from './RejectRequestModal';
 export { CompleteRequestModal } from './CompleteRequestModal';
+export { RejectionDetailsModal } from './RejectionDetailsModal';
 export { DeviceRequestsTab } from './DeviceRequestsTab';
 export { RequestStatusBadge } from './RequestStatusBadge';

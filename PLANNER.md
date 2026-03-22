@@ -9565,3 +9565,129 @@ useEffect(() => {
 | `knoxadmin-client/src/api/devices.ts` | Add `getDistinctOsVersions` |
 | `knoxadmin-client/src/components/devices/RequestDeviceModal.tsx` | Replace OS text input with smart dropdown + manual fallback |
 
+---
+
+# Plan: Rejection Details Modal in Device Requests
+
+**STATUS:** IN PROGRESS
+
+## Overview
+
+When a device request is rejected, users need to understand the rejection reason and who made the decision. Currently, the DeviceRequestsTab shows a small ℹ️ icon next to rejected requests with the reason only visible on hover as a browser tooltip. This plan improves the UX by replacing the tooltip with a clickable modal that displays detailed rejection information.
+
+---
+
+## Current State
+
+- Rejected requests show a small ℹ️ icon with rejection reason in title attribute (browser tooltip)
+- Limited space and poor UX
+- No information about who rejected or when
+
+---
+
+## Desired State
+
+- ℹ️ icon with "Details" label next to rejected status badge
+- Hover shows "Click to view rejection details" tooltip
+- Click opens a modal popup showing:
+  - **Request ID** (in code format for reference)
+  - **Device Type**, **Platform**, **OS Version** (context)
+  - **Purpose** (what was requested)
+  - **Rejection Reason** (highlighted in red box)
+  - **Rejected By** (user who made the decision)
+  - **Rejected At** (timestamp of rejection)
+
+---
+
+## Implementation
+
+### New Component: `RejectionDetailsModal.tsx`
+
+Modal component displaying rejection information:
+- Props: `isOpen`, `onClose`, `request` (DeviceRequest), `rejectedByUserName` (optional)
+- Layout:
+  ```
+  ┌─────────────────────────────────┐
+  │ Rejection Details          [×]  │
+  ├─────────────────────────────────┤
+  │ Request ID: [UUID]              │
+  │ Device Type: Mobile             │
+  │ Platform: iOS | OS: 17.2        │
+  │ Purpose: ...                    │
+  │                                 │
+  │ ─── Rejection Details ───       │
+  │ Reason: [red highlighted box]   │
+  │ Rejected By: Admin Name         │
+  │ Rejected At: 22 Mar 2026, 14:30 │
+  │                                 │
+  │                      [Close]    │
+  └─────────────────────────────────┘
+  ```
+
+### Update: `DeviceRequestsTab.tsx`
+
+1. **Import**: Add `RejectionDetailsModal` import
+2. **State**: Add `rejectionDetailsRequestId` state to track which request's modal is open
+3. **Rejection Icon**:
+   - Replace title-only div with clickable button
+   - Show "ℹ️ Details" text (was just "ℹ️")
+   - On click: `setRejectionDetailsRequestId(request.id)`
+   - Hover shows: "Click to view rejection details"
+   - Styling: `hover:underline` for button-like feel
+4. **Modal Render**: Add `<RejectionDetailsModal />` at bottom with:
+   - `isOpen={!!rejectionDetailsRequestId}`
+   - `onClose={() => setRejectionDetailsRequestId(null)}`
+   - `request={requests.find(r => r.id === rejectionDetailsRequestId) || null}`
+   - `rejectedByUserName={...}` (fetch from request or user list)
+
+### Update: `components/devices/index.ts`
+
+Export the new `RejectionDetailsModal` component:
+```ts
+export { RejectionDetailsModal } from './RejectionDetailsModal';
+```
+
+---
+
+## Files Changed
+
+| File | Change |
+|---|---|
+| `knoxadmin-client/src/components/devices/RejectionDetailsModal.tsx` | NEW — Modal component for rejection details |
+| `knoxadmin-client/src/components/devices/DeviceRequestsTab.tsx` | Add modal state + click handler for rejection icon |
+| `knoxadmin-client/src/components/devices/index.ts` | Export `RejectionDetailsModal` |
+
+---
+
+## UX Flow
+
+```
+User sees DeviceRequestsTab
+  ↓
+Rejected request row: Status shows 🔴 Rejected
+  ↓
+User hovers over "ℹ️ Details" button → sees "Click to view rejection details"
+  ↓
+User clicks → RejectionDetailsModal opens
+  ↓
+Modal shows:
+  - Request context (device type, platform, purpose)
+  - Detailed rejection reason (highlighted)
+  - Who rejected (name)
+  - When rejected (timestamp)
+  ↓
+User clicks [Close] or [×] to dismiss modal
+```
+
+---
+
+## Acceptance Criteria
+
+- ✅ Rejection icon shows "ℹ️ Details" text (not just icon)
+- ✅ Hover tooltip says "Click to view rejection details"
+- ✅ Click opens modal with all rejection details
+- ✅ Modal displays Request ID, device context, rejection reason, rejecter, timestamp
+- ✅ Modal has clear [Close] button
+- ✅ Rejection reason highlighted in red box for visibility
+- ✅ Modal responsive and accessible
+

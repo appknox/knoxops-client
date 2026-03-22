@@ -6,6 +6,7 @@ import { Button } from '@/components/ui';
 import { RequestStatusBadge } from './RequestStatusBadge.js';
 import { RejectRequestModal } from './RejectRequestModal.js';
 import { CompleteRequestModal } from './CompleteRequestModal.js';
+import { RejectionDetailsModal } from './RejectionDetailsModal.js';
 import { ChevronLeft, ChevronRight, AlertCircle } from 'lucide-react';
 import type { DeviceRequest } from '@/types/device-request.types.js';
 
@@ -18,6 +19,7 @@ export function DeviceRequestsTab() {
   const [page, setPage] = useState(1);
   const [rejectingRequestId, setRejectingRequestId] = useState<string | null>(null);
   const [completingRequestId, setCompletingRequestId] = useState<string | null>(null);
+  const [rejectionDetailsRequestId, setRejectionDetailsRequestId] = useState<string | null>(null);
 
   useEffect(() => {
     fetchRequests();
@@ -97,12 +99,13 @@ export function DeviceRequestsTab() {
                       </div>
                     )}
                     {request.status === 'rejected' && request.rejectionReason && (
-                      <div
-                        className="text-xs text-gray-600 cursor-help hover:text-gray-900"
-                        title={request.rejectionReason}
+                      <button
+                        onClick={() => setRejectionDetailsRequestId(request.id)}
+                        className="text-sm text-gray-600 hover:text-gray-900 hover:underline flex items-center gap-1 transition-colors"
+                        title="Click to view rejection details"
                       >
-                        ℹ️
-                      </div>
+                        ℹ️ <span className="text-xs">Details</span>
+                      </button>
                     )}
                   </div>
                 </td>
@@ -200,6 +203,18 @@ export function DeviceRequestsTab() {
           isOpen={!!completingRequestId}
           onClose={() => setCompletingRequestId(null)}
           requestId={completingRequestId}
+        />
+      )}
+      {rejectionDetailsRequestId && (
+        <RejectionDetailsModal
+          isOpen={!!rejectionDetailsRequestId}
+          onClose={() => setRejectionDetailsRequestId(null)}
+          request={requests.find((r) => r.id === rejectionDetailsRequestId) || null}
+          rejectedByUserName={
+            requests.find((r) => r.id === rejectionDetailsRequestId)?.rejectedBy
+              ? `Unknown User`
+              : undefined
+          }
         />
       )}
     </>
