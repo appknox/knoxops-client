@@ -2,11 +2,12 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useEffect, useState } from 'react';
-import { Loader2 } from 'lucide-react';
+import { Loader2, Usb } from 'lucide-react';
 import { Modal, Button, Input, Select, Textarea } from '@/components/ui';
 import { useDeviceStore } from '@/stores';
 import { devicesApi } from '@/api/devices';
 import { PURPOSE_OPTIONS } from '@/constants/deviceOptions';
+import { FetchDeviceWizard } from './FetchDeviceWizard';
 import type { Device, DeviceType, DeviceStatus } from '@/types';
 
 const updateDeviceSchema = z.object({
@@ -21,6 +22,7 @@ const updateDeviceSchema = z.object({
   macAddress: z.string().max(17).optional(),
   osVersion: z.string().optional(),
   cpuArch: z.string().optional(),
+  rom: z.string().optional(),
   platform: z.string().optional(),
   colour: z.string().optional(),
   imei: z.string().optional(),
@@ -116,6 +118,7 @@ const EditDeviceModal = ({ isOpen, onClose, device }: EditDeviceModalProps) => {
   const { updateDevice, isLoading } = useDeviceStore();
   const [serialError, setSerialError] = useState<string | null>(null);
   const [serialChecking, setSerialChecking] = useState(false);
+  const [wizardOpen, setWizardOpen] = useState(false);
 
   const {
     register,
@@ -141,6 +144,7 @@ const EditDeviceModal = ({ isOpen, onClose, device }: EditDeviceModalProps) => {
           // Technical specs from metadata
           osVersion: (device.metadata?.osVersion as string) || '',
           cpuArch: normalizeValue((device.metadata?.cpuArch as string) || '', cpuArchOptions),
+          rom: (device.metadata?.rom as string) || '',
           platform: normalizeValue((device.metadata?.platform as string) || '', platformOptions),
           colour: normalizeValue((device.metadata?.colour as string) || '', colourOptions),
           imei: (device.metadata?.imei as string) || '',
@@ -201,6 +205,7 @@ const EditDeviceModal = ({ isOpen, onClose, device }: EditDeviceModalProps) => {
       const metadata: Record<string, string> = {};
       if (data.osVersion?.trim()) metadata.osVersion = data.osVersion.trim();
       if (data.cpuArch?.trim()) metadata.cpuArch = data.cpuArch.trim();
+      if (data.rom?.trim()) metadata.rom = data.rom.trim();
       if (data.platform?.trim()) metadata.platform = data.platform.trim();
       if (data.colour?.trim()) metadata.colour = data.colour.trim();
       if (data.udid?.trim()) metadata.udid = data.udid.trim();
@@ -272,6 +277,7 @@ const EditDeviceModal = ({ isOpen, onClose, device }: EditDeviceModalProps) => {
             <div className="grid grid-cols-2 gap-4">
               <Select label="CPU-Arch" options={cpuArchOptions} {...register('cpuArch')} />
               <Input label="OS Version" {...register('osVersion')} placeholder="e.g. 17.2 / 13" />
+              <Input label="ROM" {...register('rom')} placeholder="Auto-filled from USB" />
             </div>
           )}
 
@@ -314,15 +320,55 @@ const EditDeviceModal = ({ isOpen, onClose, device }: EditDeviceModalProps) => {
           </div>
         </div>
 
-        <div className="flex justify-end gap-3 px-6 py-4 border-t border-gray-200 bg-gray-50">
-          <Button type="button" variant="outline" onClick={onClose}>
-            Cancel
-          </Button>
-          <Button type="submit" isLoading={isLoading} disabled={!!serialError}>
-            Save Changes
-          </Button>
+        <div className="flex justify-between gap-3 px-6 py-4 border-t border-gray-200 bg-gray-50">
+          {(selectedType === 'mobile' || selectedType === 'tablet') && (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => setWizardOpen(true)}
+              className="flex items-center gap-2"
+            >
+              <Usb className="h-4 w-4" />
+              Refetch Device Info
+            </Button>
+          )}
+          {selectedType !== 'mobile' && selectedType !== 'tablet' && <div />}
+          <div className="flex gap-3">
+            <Button type="button" variant="outline" onClick={onClose}>
+              Cancel
+            </Button>
+            <Button type="submit" isLoading={isLoading} disabled={!!serialError}>
+              Save Changes
+            </Button>
+          </div>
         </div>
       </form>
+
+      {/* Fetch Device Wizard */}
+      <FetchDeviceWizard
+        isOpen={wizardOpen}
+        onClose={() => setWizardOpen(false)}
+        currentDeviceId={device?.id}
+        currentSerialNumber={device?.serialNumber}
+        expectedPlatform={(device?.metadata?.platform as string) || undefined}
+        onFetched={(info) => {
+          if (info.serialNumber) setValue('serialNumber', info.serialNumber);
+          if (info.udid) setValue('udid', info.udid);
+          if (info.modelNumber) setValue('modelNumber', info.modelNumber);
+          if (info.model) setValue('model', info.model);
+          if (info.osVersion) setValue('osVersion', info.osVersion);
+          if (info.cpuArch) setValue('cpuArch', info.cpuArch);
+          if (info.rom) setValue('rom', info.rom);
+          if (info.imei) setValue('imei', info.imei);
+          if (info.imei2) setValue('imei2', info.imei2);
+          if (info.macAddress) setValue('macAddress', info.macAddress);
+          if (info.simNumber) setValue('simNumber', info.simNumber);
+          if (info.colour) setValue('colour', info.colour);
+          if (info.platform) setValue('platform', info.platform);
+          setWizardOpen(false);
+        }}
+      />
     </Modal>
   );
 };

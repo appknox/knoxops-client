@@ -23,6 +23,7 @@ const createDeviceSchema = z.object({
   type: z.enum(deviceTypes),
   osVersion: z.string().optional(),
   cpuArch: z.string().optional(),
+  rom: z.string().optional(),
   platform: z.string().optional(),
   colour: z.string().optional(),
   imei: z.string().optional(),
@@ -168,6 +169,7 @@ const RegisterDevicePage = () => {
       const metadata: Record<string, string> = {};
       if (data.osVersion?.trim()) metadata.osVersion = data.osVersion.trim();
       if (data.cpuArch?.trim()) metadata.cpuArch = data.cpuArch.trim();
+      if (data.rom?.trim()) metadata.rom = data.rom.trim();
       if (data.platform?.trim()) metadata.platform = data.platform.trim();
       if (data.colour?.trim()) metadata.colour = data.colour.trim();
       if (data.udid?.trim()) metadata.udid = data.udid.trim();
@@ -300,6 +302,7 @@ const RegisterDevicePage = () => {
                   <Select label="Platform" options={platformOptions} {...register('platform')} />
                   <Select label="Colour" options={colourOptions} {...register('colour')} />
                   <Input label="OS Version" {...register('osVersion')} placeholder="e.g. 17.2 / 13" />
+                  <Input label="ROM" {...register('rom')} placeholder="Auto-filled from USB" />
                   <Input label="UDID" {...register('udid')} placeholder="Auto-filled from USB" />
                 </div>
               </section>
@@ -374,6 +377,7 @@ const RegisterDevicePage = () => {
           setValue('type', 'mobile');
           if (info.osVersion) setValue('osVersion', info.osVersion);
           if (info.cpuArch) setValue('cpuArch', info.cpuArch);
+          if (info.rom) setValue('rom', info.rom);
           if (info.colour) setValue('colour', info.colour);
           if (info.imei) setValue('imei', info.imei);
           if (info.imei2) setValue('imei2', info.imei2);

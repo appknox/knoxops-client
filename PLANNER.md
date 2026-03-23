@@ -11064,3 +11064,171 @@ No store or API changes needed — `purpose` already maps to the correct query p
 3. Select each Purpose option and verify results are returned
 4. Confirm "All Assignees" dropdown is gone
 5. Confirm Clear button still works correctly
+
+---
+
+# Plan: Fetch & Store Device ROM + Add Refetch in Edit Modal
+
+**STATUS:** 🟡 PENDING
+
+## Context
+
+When fetching device info via USB during enrollment, the ROM/build identifier is not captured. For Android, properties like `ro.lineage.version` (custom ROMs) and `ro.build.display.id` (stock builds) are available via `adb shell getprop` and should be stored in `metadata.rom`. Confirmed working on a connected device: `TQ3A.230901.001` (stock Google Android 13).
+
+Additionally, the Edit Device modal has no way to re-fetch fresh device info from a connected device — users have to manually update each field. A "Refetch Device Info" CTA should be added to the edit modal, reusing the existing `FetchDeviceWizard`.
+
+---
+
+## Changes
+
+### 1. Backend — `usb.service.ts`
+**File:** `knoxadmin/src/modules/devices/usb/usb.service.ts`
+
+In `fetchAndroidDeviceInfo`, the existing `adb shell getprop` call fetches all props at once. Add extraction of:
+- `ro.lineage.version` — present on LineageOS/custom ROMs (e.g. `14.1-20170420-NIGHTLY-otus`)
+- `ro.build.display.id` — present on all Android devices (e.g. `TQ3A.230901.001`)
+
+ROM resolution logic (in order of preference):
+```ts
+const rom =
+  props['ro.lineage.version'] ||
+  props['ro.build.display.id'] ||
+  null;
+```
+
+Add `rom` to the returned info object alongside existing fields.
+
+---
+
+### 2. Backend — `usb.controller.ts`
+**File:** `knoxadmin/src/modules/devices/usb/usb.controller.ts`
+
+Ensure `rom` is included in the response object returned from the `fetch` endpoint. No schema changes needed — it flows through the existing `UsbDeviceInfo`-shaped response.
+
+---
+
+### 3. Frontend — `deviceUsb.ts`
+**File:** `knoxadmin-client/src/api/deviceUsb.ts`
+
+Add `rom` to `UsbDeviceInfo` interface:
+```ts
+export interface UsbDeviceInfo {
+  // ...existing fields...
+  rom: string | null;
+}
+```
+
+---
+
+### 4. Frontend — `FetchDeviceWizard.tsx`
+**File:** `knoxadmin-client/src/components/devices/FetchDeviceWizard.tsx`
+
+In the Step 3 fetched-info display section, add a row to show the ROM value alongside the other fields:
+```tsx
+{deviceInfo.rom && (
+  <div>
+    <span className="text-gray-500">ROM</span>
+    <span>{deviceInfo.rom}</span>
+  </div>
+)}
+```
+No changes needed to `onFetched` — it already passes the full `UsbDeviceInfo` object to the parent.
+
+---
+
+### 5. Frontend — `RegisterDevicePage.tsx`
+**File:** `knoxadmin-client/src/pages/devices/RegisterDevicePage.tsx`
+
+In the `onFetched` callback, add:
+```ts
+if (info.rom) setValue('rom', info.rom);
+```
+This populates the existing `rom` field in the form's metadata section.
+
+---
+
+### 6. Frontend — `EditDeviceModal.tsx`
+**File:** `knoxadmin-client/src/components/devices/EditDeviceModal.tsx`
+
+Add a "Refetch Device Info" CTA button near the top of the modal (below the device name/ID field). Clicking it opens the `FetchDeviceWizard`.
+
+On `onFetched`, update fields using the modal's existing `setValue` (from `useForm`):
+```ts
+if (info.model) setValue('model', info.model);
+if (info.osVersion) setValue('osVersion', info.osVersion);
+if (info.cpuArch) setValue('cpuArch', info.cpuArch);
+if (info.imei) setValue('imei', info.imei);
+if (info.imei2) setValue('imei2', info.imei2);
+if (info.macAddress) setValue('macAddress', info.macAddress);
+if (info.simNumber) setValue('simNumber', info.simNumber);
+if (info.rom) setValue('rom', info.rom);
+// Note: do NOT overwrite serialNumber or name on edit
+```
+
+Import and wire `FetchDeviceWizard` with a `wizardOpen` boolean state. CTA label: **"Refetch Device Info"** with a refresh/USB icon.
+
+---
+
+## Files to Modify
+
+| File | Change |
+|------|--------|
+| `knoxadmin/src/modules/devices/usb/usb.service.ts` | Extract `ro.lineage.version` + `ro.build.display.id`, populate `rom` |
+| `knoxadmin/src/modules/devices/usb/usb.controller.ts` | Pass `rom` through in fetch response |
+| `knoxadmin-client/src/api/deviceUsb.ts` | Add `rom: string | null` to `UsbDeviceInfo` |
+| `knoxadmin-client/src/components/devices/FetchDeviceWizard.tsx` | Display `rom` in Step 3 info review |
+| `knoxadmin-client/src/pages/devices/RegisterDevicePage.tsx` | Wire `rom` into `setValue` in `onFetched` |
+| `knoxadmin-client/src/components/devices/EditDeviceModal.tsx` | Add "Refetch Device Info" CTA + integrate `FetchDeviceWizard` |
+
+No DB schema changes needed — `rom` is already stored inside the `metadata` JSONB column and the `DeviceMetadata` TypeScript interface already has the `rom` field defined.
+
+---
+
+## Verification
+
+1. Connect an Android device via USB
+2. Go to Register Device → click "Fetch Device Info"
+3. Confirm ROM appears in Step 3 (e.g. `TQ3A.230901.001` for stock, `14.1-20170420-NIGHTLY-otus` for LineageOS)
+4. Click "Use This Info" and confirm `rom` field is populated in the form
+5. Submit and confirm `metadata.rom` is saved in the DB
+6. Open Edit Device modal for a registered device
+7. Connect device via USB, click "Refetch Device Info"
+8. Confirm wizard opens, fetches info, and updates form fields on completion (serial/name not overwritten)
+
+---
+
+# Addendum: iOS ROM Support (extends plan above)
+
+**STATUS:** 🟡 PENDING
+
+## Context
+
+Connected iPhone returns `BuildVersion: 18D70` via `ideviceinfo`. iOS has no custom ROMs — the build version is the closest equivalent to Android's `ro.build.display.id`. `ProductVersion` (e.g. `14.4.2`) is already captured as `osVersion`, so `BuildVersion` is the right value for `rom`.
+
+## Additional Change — `usb.service.ts` (iOS path)
+**File:** `knoxadmin/src/modules/devices/usb/usb.service.ts`
+
+In `fetchIosDeviceInfo` (line ~157), add `rom: null` to the initial `info` object:
+```ts
+const info: Partial<DeviceInfo> = {
+  // ...existing fields...
+  rom: null,   // add this
+};
+```
+
+In the `switch` block (line ~179), add:
+```ts
+case 'BuildVersion':
+  info.rom = value;   // e.g. "18D70"
+  break;
+```
+
+No other file changes needed beyond what is already listed in the plan above — the `UsbDeviceInfo` interface, `FetchDeviceWizard` display, `RegisterDevicePage` setValue, and `EditDeviceModal` refetch wiring all apply equally to iOS.
+
+## Verification
+
+1. Connect iPhone via USB
+2. Go to Register Device → "Fetch Device Info"
+3. Confirm `rom` shows `18D70` (or equivalent build number) in Step 3 review
+4. Click "Use This Info" → confirm `rom` field is populated in the form
+5. Submit and confirm `metadata.rom` is saved in DB

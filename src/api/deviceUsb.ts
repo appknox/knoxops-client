@@ -20,6 +20,7 @@ export interface UsbDeviceInfo {
   imei2: string | null;
   macAddress: string | null;
   simNumber: string | null;
+  rom: string | null;
 }
 
 function extractError(err: any): Error {

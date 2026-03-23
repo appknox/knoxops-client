@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { AlertCircle, Smartphone, Loader2, Check } from 'lucide-react';
+import { AlertCircle, Smartphone, Loader2, Check, X } from 'lucide-react';
 import { Modal } from '@/components/ui/Modal';
 import { Button } from '@/components/ui/Button';
 import { deviceUsbApi, type UsbDetectResult, type UsbDeviceInfo } from '@/api/deviceUsb';
@@ -9,9 +9,12 @@ interface FetchDeviceWizardProps {
   isOpen: boolean;
   onClose: () => void;
   onFetched: (info: UsbDeviceInfo) => void;
+  currentDeviceId?: string; // Device ID being edited
+  currentSerialNumber?: string; // Serial number of device being edited
+  expectedPlatform?: string; // If set, enforce platform match (e.g. "iOS" or "Android")
 }
 
-export const FetchDeviceWizard = ({ isOpen, onClose, onFetched }: FetchDeviceWizardProps) => {
+export const FetchDeviceWizard = ({ isOpen, onClose, onFetched, currentDeviceId, currentSerialNumber, expectedPlatform }: FetchDeviceWizardProps) => {
   const [step, setStep] = useState<1 | 2 | 3>(1);
   const [platform, setPlatform] = useState<'ios' | 'android' | null>(null);
   const [detectedDevice, setDetectedDevice] = useState<UsbDetectResult | null>(null);
@@ -42,6 +45,19 @@ export const FetchDeviceWizard = ({ isOpen, onClose, onFetched }: FetchDeviceWiz
     try {
       const result = await deviceUsbApi.detect();
       if (result) {
+        // Check platform mismatch against the device being edited
+        if (expectedPlatform) {
+          const detected = result.platform.toLowerCase();
+          const expected = expectedPlatform.toLowerCase();
+          if (detected !== expected) {
+            const detectedLabel = detected === 'ios' ? 'iPhone (iOS)' : 'Android';
+            const expectedLabel = expected === 'ios' ? 'iPhone (iOS)' : 'Android';
+            setError(
+              `Platform mismatch: this device is registered as ${expectedLabel} but you connected a ${detectedLabel} device. Please connect the correct device.`
+            );
+            return;
+          }
+        }
         setDetectedDevice(result);
         setPlatform(result.platform);
         setStep(2);
@@ -77,11 +93,14 @@ export const FetchDeviceWizard = ({ isOpen, onClose, onFetched }: FetchDeviceWiz
       const info = await deviceUsbApi.fetchInfo(platform, detectedDevice.id);
       setDeviceInfo(info);
 
-      // Check for serial conflict
+      // Check for serial conflict (skip only if same device with same serial)
       if (info.serialNumber) {
-        const check = await devicesApi.checkSerial(info.serialNumber);
-        if (check.exists) {
-          setSerialConflict({ deviceId: check.deviceId!, deviceName: check.deviceName });
+        const isSameSerial = info.serialNumber === currentSerialNumber;
+        if (!isSameSerial) {
+          const check = await devicesApi.checkSerial(info.serialNumber);
+          if (check.exists) {
+            setSerialConflict({ deviceId: check.deviceId!, deviceName: check.deviceName });
+          }
         }
       }
     } catch (err: any) {
@@ -116,10 +135,18 @@ export const FetchDeviceWizard = ({ isOpen, onClose, onFetched }: FetchDeviceWiz
     <Modal isOpen={isOpen} onClose={onClose} size="md">
       <div className="p-6">
         {/* Header */}
-        <div className="mb-6">
+        <div className="mb-6 flex items-center justify-between">
           <h2 className="text-lg font-semibold text-gray-900">
             Step {step} of 3 · {step === 1 ? 'Connect Device' : step === 2 ? 'Authorize Device' : 'Device Info'}
           </h2>
+          <button
+            type="button"
+            onClick={onClose}
+            className="text-gray-400 hover:text-gray-600 transition-colors"
+            aria-label="Close"
+          >
+            <X className="h-5 w-5" />
+          </button>
         </div>
 
         {/* Step 1: Connect */}
@@ -317,6 +344,10 @@ export const FetchDeviceWizard = ({ isOpen, onClose, onFetched }: FetchDeviceWiz
                       <span className="font-medium text-gray-900">{deviceInfo.cpuArch}</span>
                     </div>
                   )}
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-600">ROM:</span>
+                    <span className="font-medium text-gray-900">{deviceInfo.rom || '(not available)'}</span>
+                  </div>
                   <div className="flex justify-between text-sm">
                     <span className="text-gray-600">Platform:</span>
                     <span className="font-medium text-gray-900">{deviceInfo.platform}</span>
