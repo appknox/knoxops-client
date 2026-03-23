@@ -1,4 +1,4 @@
-import { MessageSquare, Pencil, Trash2, Monitor, Smartphone, Tablet } from 'lucide-react';
+import { MessageSquare, Pencil, Trash2, Monitor, Smartphone, Tablet, Plug } from 'lucide-react';
 import { Avatar, Pagination } from '@/components/ui';
 import { DeviceStatusBadge } from './DeviceStatusBadge';
 import { usePermissions } from '@/hooks/usePermissions';
@@ -7,6 +7,16 @@ import type { DeviceListItem } from '@/types';
 // Platform icon component
 const PlatformIcon = ({ platform, type }: { platform: string | null; type?: string }) => {
   const platformLower = platform?.toLowerCase();
+  const typeLower = type?.toLowerCase();
+
+  // Charging hub icon (Cambrionix)
+  if (typeLower === 'charging_hub' || platformLower === 'cambrionix') {
+    return (
+      <div className="w-8 h-8 bg-orange-50 rounded-lg flex items-center justify-center">
+        <Plug className="h-4 w-4 text-orange-600" />
+      </div>
+    );
+  }
 
   if (platformLower === 'ios') {
     // Apple/iOS icon
@@ -31,7 +41,6 @@ const PlatformIcon = ({ platform, type }: { platform: string | null; type?: stri
   }
 
   // Fallback to type-based icons when platform is not set
-  const typeLower = type?.toLowerCase();
   if (typeLower === 'mobile') {
     return (
       <div className="w-8 h-8 bg-blue-50 rounded-lg flex items-center justify-center">
