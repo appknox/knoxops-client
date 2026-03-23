@@ -18,6 +18,8 @@ import type {
   UpdateCommentInput,
   CommentListResponse,
   CombinedHistoryResponse,
+  OnpremDocument,
+  DocumentCategory,
 } from '@/types';
 
 export const onpremApi = {
@@ -28,6 +30,21 @@ export const onpremApi = {
   list: async (params?: ListOnpremParams): Promise<OnpremListResponse> => {
     const response = await apiClient.get<OnpremListResponse>('/onprem', { params });
     return response.data;
+  },
+
+  searchClients: async (q: string): Promise<{ id: string; clientName: string; contactEmail: string | null }[]> => {
+    const response = await apiClient.get<{ data: { id: string; clientName: string; contactEmail: string | null }[] }>('/onprem/search', { params: { q } });
+    return response.data.data;
+  },
+
+  getDistinctVersions: async (): Promise<string[]> => {
+    const response = await apiClient.get<{ data: string[] }>('/onprem/distinct-versions');
+    return response.data.data;
+  },
+
+  getDistinctCsmUsers: async (): Promise<{ id: string; firstName: string; lastName: string; email: string }[]> => {
+    const response = await apiClient.get<{ data: { id: string; firstName: string; lastName: string; email: string }[] }>('/onprem/distinct-csm-users');
+    return response.data.data;
   },
 
   getById: async (id: string): Promise<OnpremDeployment> => {
@@ -224,10 +241,71 @@ export const onpremApi = {
     await apiClient.delete(`/onprem/${deploymentId}/comments/${commentId}`);
   },
 
-  getCombinedHistory: async (deploymentId: string): Promise<CombinedHistoryResponse> => {
+  getCombinedHistory: async (
+    deploymentId: string,
+    params?: { type?: string; page?: number; limit?: number }
+  ): Promise<CombinedHistoryResponse> => {
     const response = await apiClient.get<CombinedHistoryResponse>(
-      `/onprem/${deploymentId}/combined-history`
+      `/onprem/${deploymentId}/combined-history`,
+      { params }
     );
     return response.data;
+  },
+
+  // ============================================
+  // DOCUMENT MANAGEMENT
+  // ============================================
+
+  uploadDocuments: async (
+    deploymentId: string,
+    category: DocumentCategory,
+    files: File[]
+  ): Promise<OnpremDocument[]> => {
+    const formData = new FormData();
+    files.forEach((file) => formData.append('files', file));
+    const response = await apiClient.post<OnpremDocument[]>(
+      `/onprem/${deploymentId}/documents?category=${category}`,
+      formData,
+      { headers: { 'Content-Type': 'multipart/form-data' } }
+    );
+    return response.data;
+  },
+
+  listDocuments: async (
+    deploymentId: string,
+    category?: DocumentCategory
+  ): Promise<OnpremDocument[]> => {
+    const params = category ? { category } : undefined;
+    const response = await apiClient.get<OnpremDocument[]>(
+      `/onprem/${deploymentId}/documents`,
+      { params }
+    );
+    return response.data;
+  },
+
+  deleteDocument: async (deploymentId: string, documentId: string): Promise<void> => {
+    await apiClient.delete(`/onprem/${deploymentId}/documents/${documentId}`);
+  },
+
+  downloadAll: async (deploymentId: string): Promise<Blob> => {
+    const response = await apiClient.get(`/onprem/${deploymentId}/download-all`, {
+      responseType: 'blob',
+    });
+    return response.data;
+  },
+
+  // ============================================
+  // PATCH MANAGEMENT
+  // ============================================
+
+  recordPatch: async (
+    id: string,
+    data: {
+      patchDate: string;
+      newVersion?: string;
+      nextScheduledPatchDate?: string;
+    }
+  ): Promise<void> => {
+    await apiClient.patch(`/onprem/${id}/record-patch`, data);
   },
 };

@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, Save, Download, AlertCircle } from 'lucide-react';
+import { ArrowLeft, Save, Download, AlertCircle, Upload, Trash2, File } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { Button, Input, Select, Textarea, Card, CardHeader, CardBody, UserSearchCombobox } from '@/components/ui';
 import { useOnpremStore } from '@/stores';
@@ -14,6 +14,7 @@ import type {
   HypervisorType,
   LanSpeed,
   WifiStandard,
+  OnpremDocument,
 } from '@/types';
 
 // Options for select fields
@@ -185,7 +186,25 @@ const IP_REGEX = /^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2
 
 const isValidDomainOrIP = (value: string): boolean => {
   if (!value.trim()) return true; // Empty is valid (optional field)
-  return DOMAIN_REGEX.test(value) || IP_REGEX.test(value);
+
+  // Remove protocol if present (http:// or https://)
+  let normalizedValue = value.trim().replace(/^https?:\/\//i, '');
+
+  // Remove trailing slash
+  normalizedValue = normalizedValue.replace(/\/$/, '');
+
+  // Check if it's a valid domain or IP
+  return DOMAIN_REGEX.test(normalizedValue) || IP_REGEX.test(normalizedValue);
+};
+
+const isValidIP = (value: string): boolean => {
+  if (!value.trim()) return true; // Empty is valid (optional field)
+  return IP_REGEX.test(value.trim());
+};
+
+const isValidDnsServers = (value: string): boolean => {
+  if (!value.trim()) return true; // Empty is valid (optional field)
+  return value.split(',').every((ip) => IP_REGEX.test(ip.trim()));
 };
 
 interface ValidationResult {
@@ -250,6 +269,26 @@ const validateForm = (data: FormData): ValidationResult => {
 
   if (data.licenseNumberOfApps && isNaN(parseInt(data.licenseNumberOfApps))) {
     errors.licenseNumberOfApps = 'Must be a valid number';
+  }
+
+  // Network Configuration validations
+  if (data.staticIP && !isValidIP(data.staticIP)) {
+    errors.staticIP = 'Please enter a valid IPv4 address (e.g. 192.168.1.100)';
+  }
+  if (data.gateway && !isValidIP(data.gateway)) {
+    errors.gateway = 'Please enter a valid IPv4 address (e.g. 192.168.1.1)';
+  }
+  if (data.netmask && !isValidIP(data.netmask)) {
+    errors.netmask = 'Please enter a valid IPv4 address (e.g. 255.255.255.0)';
+  }
+  if (data.dnsServers && !isValidDnsServers(data.dnsServers)) {
+    errors.dnsServers = 'Each DNS server must be a valid IPv4 address';
+  }
+  if (data.ntpServer && !isValidDomainOrIP(data.ntpServer)) {
+    errors.ntpServer = 'Please enter a valid IP address or hostname (e.g. pool.ntp.org)';
+  }
+  if (data.smtpServer && !isValidDomainOrIP(data.smtpServer)) {
+    errors.smtpServer = 'Please enter a valid IP address or hostname (e.g. smtp.example.com)';
   }
 
   return {
@@ -359,6 +398,8 @@ const RegisterOnpremPage = () => {
   const [existingDeployment, setExistingDeployment] = useState<OnpremDeployment | null>(null);
   const [prerequisiteFile, setPrerequisiteFile] = useState<File | null>(null);
   const [sslCertificateFile, setSslCertificateFile] = useState<File | null>(null);
+  const [documentFiles, setDocumentFiles] = useState<File[]>([]);
+  const [existingDocuments, setExistingDocuments] = useState<OnpremDocument[]>([]);
   const [uploadingFile, setUploadingFile] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
@@ -419,6 +460,9 @@ const RegisterOnpremPage = () => {
           useSameEmailForLicense: useSameEmail,
           notes: deployment.notes || '',
         });
+
+        // Load existing documents
+        onpremApi.listDocuments(id).then(setExistingDocuments).catch(() => setExistingDocuments([]));
       });
     }
   }, [isEditMode, id]);
@@ -493,6 +537,39 @@ const RegisterOnpremPage = () => {
           nextScheduledPatchDate: 'Next Scheduled Patch Date must be after First Deployment Date',
         }));
       }
+    }
+  };
+
+  const handleNetworkFieldBlur = (field: keyof FormData) => {
+    const value = (formData[field] as string) || '';
+
+    // Clear existing error first
+    setFieldErrors((prev) => {
+      const updated = { ...prev };
+      delete updated[field];
+      return updated;
+    });
+
+    if (!value.trim()) return; // Empty = valid (optional fields)
+
+    let error: string | null = null;
+
+    if (field === 'staticIP' || field === 'gateway' || field === 'netmask') {
+      if (!isValidIP(value)) {
+        error = 'Please enter a valid IPv4 address';
+      }
+    } else if (field === 'dnsServers') {
+      if (!isValidDnsServers(value)) {
+        error = 'Each DNS server must be a valid IPv4 address';
+      }
+    } else if (field === 'ntpServer' || field === 'smtpServer') {
+      if (!isValidDomainOrIP(value)) {
+        error = 'Please enter a valid IP address or hostname';
+      }
+    }
+
+    if (error) {
+      setFieldErrors((prev) => ({ ...prev, [field]: error! }));
     }
   };
 
@@ -989,10 +1066,24 @@ const RegisterOnpremPage = () => {
         setUploadingFile(false);
       }
 
+      // Upload documents if any
+      if (documentFiles.length > 0) {
+        setUploadingFile(true);
+        try {
+          await onpremApi.uploadDocuments(deploymentId, 'rfp', documentFiles);
+          setDocumentFiles([]);
+        } catch (error) {
+          console.error('Failed to upload documents:', error);
+        }
+        setUploadingFile(false);
+      }
+
       // Refresh deployment data after file uploads to show download buttons
-      if (isEditMode && (prerequisiteFile || sslCertificateFile)) {
+      if (isEditMode && (prerequisiteFile || sslCertificateFile || documentFiles.length > 0)) {
         const updatedDeployment = await onpremApi.getById(deploymentId);
         setExistingDeployment(updatedDeployment);
+        // Reload documents after upload
+        onpremApi.listDocuments(deploymentId).then(setExistingDocuments).catch(() => {});
       }
 
       // Only navigate away if we're creating a new deployment
@@ -1048,6 +1139,16 @@ const RegisterOnpremPage = () => {
       URL.revokeObjectURL(url);
     } catch (error) {
       console.error('Failed to download SSL certificate:', error);
+    }
+  };
+
+  const handleDeleteDocument = async (documentId: string) => {
+    if (!id) return;
+    try {
+      await onpremApi.deleteDocument(id, documentId);
+      setExistingDocuments((docs) => docs.filter((d) => d.id !== documentId));
+    } catch (error) {
+      console.error('Failed to delete document:', error);
     }
   };
 
@@ -1519,6 +1620,8 @@ const RegisterOnpremPage = () => {
                     label="Static IP"
                     value={formData.staticIP}
                     onChange={(e) => handleChange('staticIP', e.target.value)}
+                    onBlur={() => handleNetworkFieldBlur('staticIP')}
+                    error={fieldErrors.staticIP}
                     placeholder="192.168.1.100"
                     tooltip="Static IP address assigned to the Appknox server"
                   />
@@ -1526,6 +1629,8 @@ const RegisterOnpremPage = () => {
                     label="Gateway"
                     value={formData.gateway}
                     onChange={(e) => handleChange('gateway', e.target.value)}
+                    onBlur={() => handleNetworkFieldBlur('gateway')}
+                    error={fieldErrors.gateway}
                     placeholder="192.168.1.1"
                     tooltip="Default gateway IP address for network routing"
                   />
@@ -1533,6 +1638,8 @@ const RegisterOnpremPage = () => {
                     label="Netmask"
                     value={formData.netmask}
                     onChange={(e) => handleChange('netmask', e.target.value)}
+                    onBlur={() => handleNetworkFieldBlur('netmask')}
+                    error={fieldErrors.netmask}
                     placeholder="255.255.255.0"
                     tooltip="Network mask defining the subnet (e.g., 255.255.255.0)"
                   />
@@ -1540,6 +1647,8 @@ const RegisterOnpremPage = () => {
                     label="DNS Servers (comma-separated)"
                     value={formData.dnsServers}
                     onChange={(e) => handleChange('dnsServers', e.target.value)}
+                    onBlur={() => handleNetworkFieldBlur('dnsServers')}
+                    error={fieldErrors.dnsServers}
                     placeholder="8.8.8.8, 8.8.4.4"
                     tooltip="DNS server addresses separated by commas for domain name resolution"
                   />
@@ -1547,6 +1656,8 @@ const RegisterOnpremPage = () => {
                     label="NTP Server"
                     value={formData.ntpServer}
                     onChange={(e) => handleChange('ntpServer', e.target.value)}
+                    onBlur={() => handleNetworkFieldBlur('ntpServer')}
+                    error={fieldErrors.ntpServer}
                     placeholder="pool.ntp.org"
                     tooltip="Network Time Protocol server for time synchronization"
                   />
@@ -1554,6 +1665,8 @@ const RegisterOnpremPage = () => {
                     label="SMTP Server"
                     value={formData.smtpServer}
                     onChange={(e) => handleChange('smtpServer', e.target.value)}
+                    onBlur={() => handleNetworkFieldBlur('smtpServer')}
+                    error={fieldErrors.smtpServer}
                     placeholder="smtp.example.com"
                     tooltip="SMTP server address for sending email notifications"
                   />
@@ -1614,6 +1727,74 @@ const RegisterOnpremPage = () => {
                   )}
                 </div>
               </div>
+            </div>
+          </CardBody>
+        </Card>
+
+        {/* Documents */}
+        <Card>
+          <CardHeader>
+            <h2 className="text-lg font-semibold text-gray-900">Documents</h2>
+          </CardHeader>
+          <CardBody>
+            <div className="space-y-3">
+              <p className="text-sm text-gray-600">
+                Upload RFPs, proposals, and any other relevant files (PDF, DOC, DOCX, XLS, XLSX, CSV, TXT, ZIP)
+              </p>
+
+              {/* Existing uploaded documents */}
+              {existingDocuments.map((doc) => (
+                <div key={doc.id} className="flex items-center gap-2 text-sm border rounded px-3 py-2 bg-gray-50">
+                  <File className="h-4 w-4 text-gray-500" />
+                  <span className="flex-1 truncate">{doc.fileName}</span>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => handleDeleteDocument(doc.id)}
+                  >
+                    <Trash2 className="h-4 w-4 text-red-600" />
+                  </Button>
+                </div>
+              ))}
+
+              {/* New queued files */}
+              {documentFiles.map((file, i) => (
+                <div
+                  key={i}
+                  className="flex items-center gap-2 text-sm border rounded px-3 py-2 bg-blue-50"
+                >
+                  <File className="h-4 w-4 text-blue-600" />
+                  <span className="flex-1 truncate">{file.name}</span>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setDocumentFiles((f) => f.filter((_, j) => j !== i))}
+                  >
+                    <Trash2 className="h-4 w-4 text-red-600" />
+                  </Button>
+                </div>
+              ))}
+
+              {/* Add files button */}
+              <Button type="button" variant="outline" size="sm" asChild>
+                <label>
+                  <Upload className="h-4 w-4 mr-2" />
+                  Add Files
+                  <input
+                    type="file"
+                    className="sr-only"
+                    multiple
+                    accept=".pdf,.doc,.docx,.xls,.xlsx,.csv,.txt,.zip"
+                    onChange={(e) => {
+                      const newFiles = Array.from(e.target.files ?? []);
+                      setDocumentFiles((f) => [...f, ...newFiles]);
+                      e.target.value = '';
+                    }}
+                  />
+                </label>
+              </Button>
             </div>
           </CardBody>
         </Card>

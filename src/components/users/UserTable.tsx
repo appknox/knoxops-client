@@ -1,4 +1,4 @@
-import { Pencil, Trash2, Users } from 'lucide-react';
+import { Pencil, Trash2, Users, MailPlus } from 'lucide-react';
 import { Avatar, Pagination } from '@/components/ui';
 import { UserRoleBadge } from './UserRoleBadge';
 import { UserStatusBadge } from './UserStatusBadge';
@@ -15,7 +15,8 @@ interface UserTableProps {
   };
   onPageChange: (page: number) => void;
   onEdit: (user: UserListItem) => void;
-  onDeactivate: (user: UserListItem) => void;
+  onDelete: (user: UserListItem) => void;
+  onResendInvite: (user: UserListItem) => void;
   isLoading?: boolean;
 }
 
@@ -24,7 +25,8 @@ const UserTable = ({
   pagination,
   onPageChange,
   onEdit,
-  onDeactivate,
+  onDelete,
+  onResendInvite,
   isLoading,
 }: UserTableProps) => {
   if (isLoading) {
@@ -92,7 +94,7 @@ const UserTable = ({
                   <UserRoleBadge role={user.role} />
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap">
-                  <UserStatusBadge isActive={user.isActive} inviteStatus={user.inviteStatus} />
+                  <UserStatusBadge status={user.status} />
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                   {user.lastLoginAt ? formatDateTime(user.lastLoginAt) : 'Never'}
@@ -106,11 +108,35 @@ const UserTable = ({
                     >
                       <Pencil className="h-4 w-4" />
                     </button>
-                    {user.isActive && (
+                    {(user.status === 'pending' || user.status === 'expired' || user.status === 'deleted') && (() => {
+                      const sentAt = user.inviteLastSentAt ? new Date(user.inviteLastSentAt) : null;
+                      const cooldownMs = 24 * 60 * 60 * 1000;
+                      const throttled = sentAt ? (Date.now() - sentAt.getTime()) < cooldownMs : false;
+                      const nextAllowed = sentAt ? new Date(sentAt.getTime() + cooldownMs) : null;
+                      const label = user.status === 'pending' ? 'Resend Invite' : 'Re-invite';
+                      const title = throttled && nextAllowed
+                        ? `${label} — available after ${nextAllowed.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} today`
+                        : label;
+                      return (
+                        <button
+                          onClick={() => !throttled && onResendInvite(user)}
+                          disabled={throttled}
+                          className={`p-1.5 rounded-lg transition-colors ${
+                            throttled
+                              ? 'text-gray-300 cursor-not-allowed'
+                              : 'text-blue-600 hover:bg-blue-50'
+                          }`}
+                          title={title}
+                        >
+                          <MailPlus className="h-4 w-4" />
+                        </button>
+                      );
+                    })()}
+                    {user.status !== 'deleted' && (
                       <button
-                        onClick={() => onDeactivate(user)}
+                        onClick={() => onDelete(user)}
                         className="p-1.5 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                        title="Deactivate"
+                        title="Delete"
                       >
                         <Trash2 className="h-4 w-4" />
                       </button>

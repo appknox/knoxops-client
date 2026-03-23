@@ -4,3 +4,10 @@ export { ClientStatusBadge, DeploymentStatusBadge, EnvironmentTypeBadge } from '
 export { DeleteOnpremDialog } from './DeleteOnpremDialog';
 export { VersionHistoryModal } from './VersionHistoryModal';
 export { DeploymentHistoryModal } from './DeploymentHistoryModal';
+export { RecordPatchDialog } from './RecordPatchDialog';
+export { PatchAlertModal } from './PatchAlertModal';
+export { LicenseRequestStatusBadge } from './LicenseRequestStatusBadge';
+export { RequestLicenseModal } from './RequestLicenseModal';
+export { LicenseRequestDetailsModal } from './LicenseRequestDetailsModal';
+export { LicenseRequestsTab } from './LicenseRequestsTab';
+export { AllLicenseRequestsTab } from './AllLicenseRequestsTab';

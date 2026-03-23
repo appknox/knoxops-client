@@ -9,12 +9,13 @@ import type {
   Invite,
   CreateInviteInput,
   Role,
+  UserStatus,
 } from '@/types';
 
 interface UserFilters {
   search: string;
   role: Role | '';
-  isActive: '' | 'true' | 'false';
+  status: UserStatus[];
 }
 
 interface UserState {
@@ -45,16 +46,16 @@ interface UserState {
   setSort: (sortBy: string, sortOrder: 'asc' | 'desc') => void;
   selectUser: (user: User | null) => void;
   updateUser: (id: string, data: UpdateUserInput) => Promise<User>;
-  deactivateUser: (id: string) => Promise<void>;
+  deleteUser: (id: string) => Promise<void>;
   createInvite: (data: CreateInviteInput) => Promise<Invite>;
   revokeInvite: (id: string) => Promise<void>;
-  resendInvite: (id: string) => Promise<void>;
+  resendInvite: (userId: string) => Promise<void>;
 }
 
 const initialFilters: UserFilters = {
   search: '',
   role: '',
-  isActive: '',
+  status: [],
 };
 
 export const useUserStore = create<UserState>((set, get) => ({
@@ -83,7 +84,7 @@ export const useUserStore = create<UserState>((set, get) => ({
 
       if (filters.search) params.search = filters.search;
       if (filters.role) params.role = filters.role;
-      if (filters.isActive) params.isActive = filters.isActive === 'true';
+      if (filters.status.length > 0) params.status = filters.status.join(',');
 
       const response = await usersApi.list(params);
       set({
@@ -179,20 +180,20 @@ export const useUserStore = create<UserState>((set, get) => ({
     }
   },
 
-  deactivateUser: async (id) => {
+  deleteUser: async (id) => {
     set({ isLoading: true, error: null });
     try {
-      await usersApi.deactivate(id);
+      await usersApi.delete(id);
       set((state) => ({
         users: state.users.map((u) =>
-          u.id === id ? { ...u, isActive: false } : u
+          u.id === id ? { ...u, status: 'deleted' } : u
         ),
         isLoading: false,
       }));
       get().fetchStats();
     } catch (error) {
       set({
-        error: error instanceof Error ? error.message : 'Failed to deactivate user',
+        error: error instanceof Error ? error.message : 'Failed to delete user',
         isLoading: false,
       });
       throw error;
@@ -236,12 +237,10 @@ export const useUserStore = create<UserState>((set, get) => ({
     }
   },
 
-  resendInvite: async (id) => {
+  resendInvite: async (userId: string) => {
     try {
-      const invite = await invitesApi.resend(id);
-      set((state) => ({
-        invites: state.invites.map((i) => (i.id === id ? invite : i)),
-      }));
+      await invitesApi.resend(userId);
+      get().fetchUsers();
     } catch (error) {
       throw error;
     }

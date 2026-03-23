@@ -2,11 +2,37 @@ import axios, { type AxiosError, type InternalAxiosRequestConfig } from 'axios';
 
 const API_URL = import.meta.env.VITE_API_URL || '/api';
 
+// Custom serializer for query parameters to use comma-separated arrays
+const customParamsSerializer = (params: Record<string, unknown>): string => {
+  const parts: string[] = [];
+
+  Object.entries(params).forEach(([key, value]) => {
+    if (value === null || value === undefined || value === '') {
+      return;
+    }
+
+    if (Array.isArray(value)) {
+      // Use comma-separated format for arrays instead of bracket notation
+      const encodedValues = value
+        .filter((v) => v !== null && v !== undefined && v !== '')
+        .map((v) => encodeURIComponent(String(v)));
+      if (encodedValues.length > 0) {
+        parts.push(`${encodeURIComponent(key)}=${encodedValues.join(',')}`);
+      }
+    } else {
+      parts.push(`${encodeURIComponent(key)}=${encodeURIComponent(String(value))}`);
+    }
+  });
+
+  return parts.join('&');
+};
+
 export const apiClient = axios.create({
   baseURL: API_URL,
   headers: {
     'Content-Type': 'application/json',
   },
+  paramsSerializer: customParamsSerializer,
 });
 
 // Request interceptor to add auth token

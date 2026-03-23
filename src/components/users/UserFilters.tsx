@@ -1,7 +1,7 @@
-import { Search, X } from 'lucide-react';
-import { SearchInput, Select } from '@/components/ui';
+import { X } from 'lucide-react';
+import { SearchInput, Select, MultiSelect } from '@/components/ui';
 import { useUserStore } from '@/stores';
-import type { Role } from '@/types';
+import type { Role, UserStatus } from '@/types';
 
 const roleOptions = [
   { value: '', label: 'All Roles' },
@@ -10,50 +10,56 @@ const roleOptions = [
 ];
 
 const statusOptions = [
-  { value: '', label: 'All Status' },
-  { value: 'true', label: 'Active' },
-  { value: 'false', label: 'Inactive' },
+  { value: 'active', label: 'Active' },
+  { value: 'pending', label: 'Pending' },
+  { value: 'expired', label: 'Expired' },
+  { value: 'deleted', label: 'Deleted' },
 ];
 
 const UserFilters = () => {
   const { filters, setFilters, clearFilters } = useUserStore();
 
-  const hasActiveFilters = filters.search || filters.role || filters.isActive;
+  const hasActiveFilters = filters.search || filters.role || filters.status.length > 0;
 
   return (
     <div className="bg-white rounded-xl border border-gray-200 p-4 mb-6">
-      <div className="flex flex-wrap items-center gap-4">
-        <div className="flex-1 min-w-[200px] max-w-md">
-          <SearchInput
-            placeholder="Search users by name or email..."
-            value={filters.search}
-            onChange={(value) => setFilters({ search: value })}
-          />
-        </div>
+      <div className="flex items-center gap-2">
+        <input
+          type="text"
+          placeholder="Search users..."
+          value={filters.search}
+          onChange={(e) => setFilters({ search: e.target.value })}
+          className="w-80 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+        />
 
-        <Select
+        <select
           value={filters.role}
           onChange={(e) => setFilters({ role: e.target.value as Role | '' })}
-          options={roleOptions}
-          className="w-40"
-        />
+          className="w-32 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+        >
+          {roleOptions.map((opt) => (
+            <option key={opt.value} value={opt.value}>
+              {opt.label}
+            </option>
+          ))}
+        </select>
 
-        <Select
-          value={filters.isActive}
-          onChange={(e) =>
-            setFilters({ isActive: e.target.value as '' | 'true' | 'false' })
-          }
-          options={statusOptions}
-          className="w-32"
-        />
+        <div className="w-40">
+          <MultiSelect
+            options={statusOptions}
+            selected={filters.status}
+            onChange={(selected) => setFilters({ status: selected as UserStatus[] })}
+            placeholder="All Status"
+          />
+        </div>
 
         {hasActiveFilters && (
           <button
             onClick={clearFilters}
-            className="flex items-center gap-1 text-sm text-primary-600 hover:text-primary-700 font-medium"
+            className="flex items-center gap-1 text-sm text-red-600 hover:text-red-700 font-medium px-2 py-1"
           >
             <X className="h-4 w-4" />
-            Clear filters
+            Clear
           </button>
         )}
       </div>

@@ -98,6 +98,8 @@ export interface OnpremDeployment {
   lastUpdatedBy: string | null;
   createdAt: string;
   updatedAt: string;
+  // Documents
+  documents?: OnpremDocument[];
 }
 
 // List item (optimized for table display)
@@ -159,6 +161,9 @@ export interface ListOnpremParams {
   status?: DeploymentStatus;
   environmentType?: EnvironmentType;
   maintenancePlan?: MaintenancePlan;
+  currentVersion?: string;
+  currentVersions?: string[];
+  csmIds?: string[];
   environment?: string;
   region?: string;
   sortBy?: 'clientName' | 'name' | 'createdAt' | 'updatedAt' | 'lastPatchDate' | 'firstDeploymentDate' | 'clientStatus' | 'status' | 'customerName';
@@ -328,4 +333,23 @@ export interface CombinedHistoryEntry {
 
 export interface CombinedHistoryResponse {
   data: CombinedHistoryEntry[];
+  pagination: {
+    page: number;
+    limit: number;
+    total: number;
+    totalPages: number;
+  };
+}
+
+// Document types
+export type DocumentCategory = 'rfp' | 'other';
+
+export interface OnpremDocument {
+  id: string;
+  deploymentId: string;
+  category: DocumentCategory;
+  fileName: string;
+  mimeType: string | null;
+  fileSize: number | null;
+  createdAt: string;
 }

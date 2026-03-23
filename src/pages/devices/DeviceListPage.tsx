@@ -9,18 +9,24 @@ import {
   EditDeviceModal,
   DeleteDeviceDialog,
   DeviceAuditLogsModal,
+  RequestDeviceModal,
+  DeviceRequestsTab,
 } from '@/components/devices';
 import { useDeviceStore } from '@/stores';
+import { usePermissions } from '@/hooks/usePermissions';
 import { devicesApi } from '@/api';
 import type { Device, DeviceListItem } from '@/types';
 
 const DeviceListPage = () => {
+  const { canManageDevices } = usePermissions();
   const { devices, pagination, stats, isLoading, fetchDevices, fetchStats, setPage } =
     useDeviceStore();
 
   const [editDevice, setEditDevice] = useState<Device | null>(null);
   const [deleteDevice, setDeleteDevice] = useState<DeviceListItem | null>(null);
   const [historyDevice, setHistoryDevice] = useState<DeviceListItem | null>(null);
+  const [showRequestModal, setShowRequestModal] = useState(false);
+  const [activeTab, setActiveTab] = useState<'inventory' | 'requests'>('inventory');
 
   // Fetch full device details for edit modal
   const handleEditDevice = async (device: DeviceListItem) => {
@@ -37,40 +43,92 @@ const DeviceListPage = () => {
     fetchStats();
   }, [fetchDevices, fetchStats]);
 
+  useEffect(() => {
+    if (activeTab === 'inventory') {
+      fetchDevices();
+      fetchStats();
+    }
+  }, [activeTab]);
+
   return (
     <div>
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Device Management</h1>
+          <h1 className="text-2xl font-bold text-gray-900">Devices</h1>
           <p className="text-gray-500 mt-1">
             Monitor and manage hardware assets across all organizational units.
           </p>
         </div>
-        <Link to="/devices/register">
-          <Button className="shadow-md shadow-primary-500/20">
+        <div className="flex gap-3">
+          <Button
+            variant="outline"
+            onClick={() => setShowRequestModal(true)}
+            className="shadow-md shadow-primary-500/20"
+          >
             <Plus className="h-4 w-4 mr-2" />
-            Register New Device
+            Request a Device
           </Button>
-        </Link>
+          {canManageDevices && (
+            <Link to="/devices/register">
+              <Button className="shadow-md shadow-primary-500/20">
+                <Plus className="h-4 w-4 mr-2" />
+                Register New Device
+              </Button>
+            </Link>
+          )}
+        </div>
       </div>
 
-      {/* Filters */}
-      <DeviceFilters />
+      {/* Tabs */}
+      <div className="mb-6 border-b border-gray-200">
+        <div className="flex gap-8">
+          <button
+            onClick={() => setActiveTab('inventory')}
+            className={`py-3 px-1 border-b-2 font-medium text-sm transition-colors ${
+              activeTab === 'inventory'
+                ? 'border-primary-600 text-primary-600'
+                : 'border-transparent text-gray-600 hover:text-gray-900'
+            }`}
+          >
+            Inventory
+          </button>
+          <button
+            onClick={() => setActiveTab('requests')}
+            className={`py-3 px-1 border-b-2 font-medium text-sm transition-colors ${
+              activeTab === 'requests'
+                ? 'border-primary-600 text-primary-600'
+                : 'border-transparent text-gray-600 hover:text-gray-900'
+            }`}
+          >
+            {canManageDevices ? 'Requests' : 'My Requests'}
+          </button>
+        </div>
+      </div>
 
-      {/* Device Table */}
-      <DeviceTable
-        devices={devices}
-        pagination={pagination}
-        onPageChange={setPage}
-        onEdit={handleEditDevice}
-        onDelete={setDeleteDevice}
-        onViewHistory={setHistoryDevice}
-        isLoading={isLoading}
-      />
+      {/* Tab Content */}
+      {activeTab === 'inventory' ? (
+        <>
+          {/* Filters */}
+          <DeviceFilters />
 
-      {/* Summary Cards */}
-      <DeviceSummaryCards stats={stats} />
+          {/* Device Table */}
+          <DeviceTable
+            devices={devices}
+            pagination={pagination}
+            onPageChange={setPage}
+            onEdit={handleEditDevice}
+            onDelete={setDeleteDevice}
+            onViewHistory={setHistoryDevice}
+            isLoading={isLoading}
+          />
+
+          {/* Summary Cards */}
+          <DeviceSummaryCards stats={stats} />
+        </>
+      ) : (
+        <DeviceRequestsTab />
+      )}
 
       {/* Modals */}
       <EditDeviceModal
@@ -89,6 +147,11 @@ const DeviceListPage = () => {
         isOpen={!!historyDevice}
         onClose={() => setHistoryDevice(null)}
         device={historyDevice}
+      />
+
+      <RequestDeviceModal
+        isOpen={showRequestModal}
+        onClose={() => setShowRequestModal(false)}
       />
     </div>
   );

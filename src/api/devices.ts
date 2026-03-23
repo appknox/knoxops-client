@@ -9,6 +9,7 @@ import type {
   DeviceComment,
 } from '@/types';
 import type { AuditLog } from '@/types';
+import type { SuggestedDevice } from '@/types/device-request.types';
 
 export const devicesApi = {
   list: async (params?: ListDevicesParams): Promise<DeviceListResponse> => {
@@ -40,6 +41,21 @@ export const devicesApi = {
     return response.data;
   },
 
+  checkSerial: async (serialNumber: string, excludeId?: string): Promise<{
+    exists: boolean;
+    deviceId: string | null;
+    deviceName: string | null;
+  }> => {
+    const params = new URLSearchParams({ serialNumber });
+    if (excludeId) params.set('excludeId', excludeId);
+    const response = await apiClient.get<{
+      exists: boolean;
+      deviceId: string | null;
+      deviceName: string | null;
+    }>(`/devices/check-serial?${params}`);
+    return response.data;
+  },
+
   getAuditLogs: async (id: string, startDate?: string, endDate?: string): Promise<{ data: AuditLog[] }> => {
     const params: Record<string, string> = {};
     if (startDate) params.startDate = startDate;
@@ -59,7 +75,50 @@ export const devicesApi = {
     return response.data;
   },
 
+  updateComment: async (id: string, commentId: string, text: string): Promise<DeviceComment> => {
+    const response = await apiClient.put<DeviceComment>(`/devices/${id}/comments/${commentId}`, { text });
+    return response.data;
+  },
+
   deleteComment: async (deviceId: string, commentId: string): Promise<void> => {
     await apiClient.delete(`/devices/${deviceId}/comments/${commentId}`);
+  },
+
+  // History endpoint - merged comments + activities
+  getHistory: async (
+    id: string,
+    params?: {
+      type?: 'all' | 'comment' | 'activity';
+      page?: number;
+      limit?: number;
+    }
+  ): Promise<{
+    data: Array<{
+      id: string;
+      type: 'comment' | 'activity';
+      timestamp: string;
+      user?: { id: string; firstName: string; lastName: string; email: string } | null;
+      data: unknown;
+    }>;
+    pagination: { page: number; limit: number; total: number; totalPages: number };
+  }> => {
+    const response = await apiClient.get(`/devices/${id}/history`, { params });
+    return response.data;
+  },
+
+  // Get distinct OS versions for a platform
+  getDistinctOsVersions: async (platform: 'iOS' | 'Android'): Promise<string[]> => {
+    const response = await apiClient.get<{ versions: string[] }>('/devices/distinct-os-versions', {
+      params: { platform },
+    });
+    return response.data.versions;
+  },
+
+  // Suggest devices for request completion
+  suggestDevices: async (platform: string, osVersion?: string): Promise<SuggestedDevice[]> => {
+    const response = await apiClient.get<{ data: SuggestedDevice[] }>('/devices/suggest', {
+      params: { platform, osVersion },
+    });
+    return response.data.data;
   },
 };

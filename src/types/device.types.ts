@@ -1,4 +1,4 @@
-export type DeviceType = 'server' | 'workstation' | 'mobile' | 'iot' | 'network' | 'other';
+export type DeviceType = 'server' | 'workstation' | 'mobile' | 'tablet' | 'iot' | 'network' | 'charging_hub' | 'other';
 export type DeviceStatus = 'active' | 'inactive' | 'maintenance' | 'decommissioned';
 
 export interface DeviceMetadata {
@@ -7,10 +7,14 @@ export interface DeviceMetadata {
   rom?: string;
   platform?: string;
   colour?: string;
+  osVersion?: string;
   imei?: string;
+  imei2?: string;
   simNumber?: string;
-  // Network specs (moved from direct columns)
-  ipAddress?: string;
+  // iOS identifiers
+  udid?: string;
+  modelNumber?: string;
+  // Network specs
   macAddress?: string;
 }
 
@@ -19,6 +23,7 @@ export interface DeviceListItem {
   id: string;
   name: string;
   status: DeviceStatus;
+  type: DeviceType;
   model: string | null;
   platform: string | null;
   purpose: string | null;
@@ -59,7 +64,7 @@ export interface CreateDeviceInput {
   // Operational fields (direct columns)
   purpose?: string;
   assignedTo?: string;
-  // Technical specs in metadata (includes ipAddress, macAddress)
+  // Technical specs in metadata
   metadata?: DeviceMetadata;
 }
 

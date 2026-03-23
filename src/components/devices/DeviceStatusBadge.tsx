@@ -6,10 +6,10 @@ interface DeviceStatusBadgeProps {
 }
 
 const statusConfig: Record<DeviceStatus, { label: string; variant: 'success' | 'warning' | 'danger' | 'default' | 'primary' }> = {
-  active: { label: 'In inventory box', variant: 'primary' },
-  maintenance: { label: 'Checked out for repair', variant: 'warning' },
+  active: { label: 'In Inventory', variant: 'primary' },
+  inactive: { label: 'Checked out of inventory', variant: 'default' },
+  maintenance: { label: 'Out for repair', variant: 'warning' },
   decommissioned: { label: 'To be sold', variant: 'danger' },
-  inactive: { label: 'Not verified', variant: 'default' },
 };
 
 const DeviceStatusBadge = ({ status }: DeviceStatusBadgeProps) => {

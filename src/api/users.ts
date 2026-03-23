@@ -11,7 +11,11 @@ import type {
 
 export const usersApi = {
   list: async (params?: ListUsersParams): Promise<UserListResponse> => {
-    const response = await apiClient.get<UserListResponse>('/users', { params });
+    const apiParams = { ...params };
+    if (params?.status && typeof params.status === 'string') {
+      apiParams.status = params.status;
+    }
+    const response = await apiClient.get<UserListResponse>('/users', { params: apiParams });
     return response.data;
   },
 
@@ -32,7 +36,7 @@ export const usersApi = {
     return response.data;
   },
 
-  deactivate: async (id: string): Promise<void> => {
+  delete: async (id: string): Promise<void> => {
     await apiClient.delete(`/users/${id}`);
   },
 
@@ -48,17 +52,17 @@ export const usersApi = {
     const now = new Date();
     const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000);
 
-    // Filter out pending invites from users list (only count accepted users)
-    const acceptedUsers = allUsers.filter((u) => u.inviteStatus === 'accepted');
+    // Filter out pending invites from users list (only count active users)
+    const activeUsers = allUsers.filter((u) => u.status === 'active');
     const pendingInvites = invites.filter((i) => i.status === 'pending');
 
     return {
-      totalUsers: acceptedUsers.length,
-      activeNow: acceptedUsers.filter(
+      totalUsers: activeUsers.length,
+      activeNow: activeUsers.filter(
         (u) => u.lastLoginAt && new Date(u.lastLoginAt) > yesterday
       ).length,
       pendingInvites: pendingInvites.length,
-      externalGuests: acceptedUsers.filter((u) => u.role !== 'admin').length,
+      externalGuests: activeUsers.filter((u) => u.role !== 'admin').length,
     };
   },
 };
