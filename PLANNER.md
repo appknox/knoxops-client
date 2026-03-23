@@ -10981,3 +10981,86 @@ export const onpremLicenseRequestsApi = {
 - **History tab**: Reuse existing `onpremComments` component (already renders comments). Auto-inserted comments from license request actions will appear here naturally.
 - **`/onprem/:id` edit**: Detail page has an "Edit" button that links to existing `/onprem/:id/edit` page (no new edit page needed).
 
+
+---
+
+# Plan: Device Listing Page Filter Improvements
+
+**STATUS:** 🟡 PENDING
+
+## Context
+
+The devices listing page filters have two issues:
+1. Dropdown order and labelling is confusing — "All Models" is actually a Device Type filter, and Platform comes before it
+2. The "All Assignees" filter uses hardcoded team names that don't match DB data so it never returns results; it should be replaced with the Purpose filter using the correct canonical values
+
+---
+
+## Changes
+
+### `DeviceFilters.tsx`
+**File:** `src/components/devices/DeviceFilters.tsx`
+
+**1. Reorder dropdowns**
+
+Current order: Search → Platform → Type ("All Models") → Status → Assignees → Purpose
+
+Target order: Search → **Device Type** → **Platform** → Status → **Purpose** (replaces Assignees)
+
+**2. Rename type dropdown label and fix values**
+
+- Change `{ value: '', label: 'All Models' }` → `{ value: '', label: 'All Device Types' }`
+- Import `DEVICE_TYPE_OPTIONS` from `@/constants/deviceOptions` — currently missing `tablet` and `charging_hub`
+
+**3. Remove `allocatedToOptions` and its dropdown entirely**
+
+Hardcoded team names (Engineering Team, Testing Team, etc.) never matched DB data. Delete the array and the `<Select>` for `assignedTo`.
+
+**4. Fix `purposeOptions` to use canonical values from constants**
+
+Current values (`Development`, `Production`, `QA`) don't match what's stored in the DB. Replace with `PURPOSE_OPTIONS` from `@/constants/deviceOptions`, excluding `__other__`:
+
+```ts
+import { PURPOSE_OPTIONS, DEVICE_TYPE_OPTIONS } from '@/constants/deviceOptions';
+
+const typeOptions = [
+  { value: '', label: 'All Device Types' },
+  ...DEVICE_TYPE_OPTIONS,
+];
+
+const purposeOptions = [
+  { value: '', label: 'All Purposes' },
+  ...PURPOSE_OPTIONS.filter((o) => o.value !== '__other__'),
+];
+```
+
+**5. Update `hasActiveFilters`**
+
+Remove `filters.assignedTo` from the boolean check.
+
+---
+
+## Files to Modify
+
+| File | Change |
+|------|--------|
+| `src/components/devices/DeviceFilters.tsx` | Reorder dropdowns, rename type label, fix purpose values, remove assignedTo |
+
+No store or API changes needed — `purpose` already maps to the correct query param. The `assignedTo` store field can remain (just unused from UI).
+
+---
+
+## Reused Constants
+
+- `PURPOSE_OPTIONS` — `src/constants/deviceOptions.ts:3`
+- `DEVICE_TYPE_OPTIONS` — `src/constants/deviceOptions.ts:13`
+
+---
+
+## Verification
+
+1. Confirm dropdown order: Device Type → Platform → Status → Purpose
+2. Confirm all 8 device types appear (server, workstation, mobile, tablet, iot, network, charging_hub, other)
+3. Select each Purpose option and verify results are returned
+4. Confirm "All Assignees" dropdown is gone
+5. Confirm Clear button still works correctly

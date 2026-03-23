@@ -1,6 +1,7 @@
 import { RotateCcw, Filter, Download } from 'lucide-react';
 import { Select, Button, SearchInput } from '@/components/ui';
 import { useDeviceStore } from '@/stores';
+import { PURPOSE_OPTIONS, DEVICE_TYPE_OPTIONS } from '@/constants/deviceOptions';
 import type { DeviceType, DeviceStatus } from '@/types';
 
 const platformOptions = [
@@ -13,13 +14,8 @@ const platformOptions = [
 ];
 
 const typeOptions = [
-  { value: '', label: 'All Models' },
-  { value: 'server', label: 'Server' },
-  { value: 'workstation', label: 'Workstation' },
-  { value: 'mobile', label: 'Mobile' },
-  { value: 'iot', label: 'IoT' },
-  { value: 'network', label: 'Network' },
-  { value: 'other', label: 'Other' },
+  { value: '', label: 'All Device Types' },
+  ...DEVICE_TYPE_OPTIONS,
 ];
 
 const statusOptions = [
@@ -30,26 +26,16 @@ const statusOptions = [
   { value: 'decommissioned', label: 'To be sold' },
 ];
 
-const allocatedToOptions = [
-  { value: '', label: 'All Assignees' },
-  { value: 'Engineering Team', label: 'Engineering Team' },
-  { value: 'Testing Team', label: 'Testing Team' },
-  { value: 'Sales Team', label: 'Sales Team' },
-  { value: 'Marketing Team', label: 'Marketing Team' },
-];
-
 const purposeOptions = [
   { value: '', label: 'All Purposes' },
-  { value: 'Development', label: 'Development' },
-  { value: 'Production', label: 'Production' },
-  { value: 'QA', label: 'QA / Testing' },
+  ...PURPOSE_OPTIONS.filter((o) => o.value !== '__other__'),
 ];
 
 const DeviceFilters = () => {
   const { filters, setFilters, clearFilters } = useDeviceStore();
 
   const hasActiveFilters =
-    filters.search || filters.platform || filters.type || filters.status || filters.assignedTo || filters.purpose;
+    filters.search || filters.platform || filters.type || filters.status || filters.purpose;
 
   return (
     <div className="bg-white rounded-xl border border-gray-200 p-4 mb-6">
@@ -64,14 +50,6 @@ const DeviceFilters = () => {
 
         <div className="w-40">
           <Select
-            options={platformOptions}
-            value={filters.platform}
-            onChange={(e) => setFilters({ platform: e.target.value })}
-          />
-        </div>
-
-        <div className="w-40">
-          <Select
             options={typeOptions}
             value={filters.type}
             onChange={(e) => setFilters({ type: e.target.value as DeviceType | '' })}
@@ -80,17 +58,17 @@ const DeviceFilters = () => {
 
         <div className="w-40">
           <Select
-            options={statusOptions}
-            value={filters.status}
-            onChange={(e) => setFilters({ status: e.target.value as DeviceStatus | '' })}
+            options={platformOptions}
+            value={filters.platform}
+            onChange={(e) => setFilters({ platform: e.target.value })}
           />
         </div>
 
-        <div className="w-44">
+        <div className="w-40">
           <Select
-            options={allocatedToOptions}
-            value={filters.assignedTo}
-            onChange={(e) => setFilters({ assignedTo: e.target.value })}
+            options={statusOptions}
+            value={filters.status}
+            onChange={(e) => setFilters({ status: e.target.value as DeviceStatus | '' })}
           />
         </div>
 

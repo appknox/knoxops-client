@@ -1,5 +1,5 @@
 import { History, Pencil, Trash2, Server, Download, MessageSquare, CheckCheck, BellRing } from 'lucide-react';
-import { Pagination } from '@/components/ui';
+import { Pagination, Tooltip } from '@/components/ui';
 import { ClientStatusBadge, EnvironmentTypeBadge } from './OnpremStatusBadge';
 import { usePermissions } from '@/hooks/usePermissions';
 import type { OnpremDeployment } from '@/types';
@@ -161,7 +161,7 @@ const OnpremTable = ({
                             title="Click to view patch details and send Slack alert"
                           />
                           {/* Bell icon */}
-                          <BellRing className="h-3.5 w-3.5 text-blue-500" />
+                          <BellRing className="h-3.5 w-3.5 text-blue-500" title="Patch Alert" />
                           {/* Hover tooltip card */}
                           <div className="absolute top-full left-0 mt-2 w-56 bg-gray-900 text-white text-xs rounded-lg px-3 py-2.5 opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity z-20 shadow-lg space-y-1">
                             <p className={`font-semibold ${isOverdue ? 'text-red-300' : 'text-yellow-300'}`}>{tooltipTitle}</p>
@@ -194,54 +194,59 @@ const OnpremTable = ({
                 <td className="px-6 py-4 whitespace-nowrap text-right" onClick={(e) => e.stopPropagation()}>
                   <div className="flex items-center justify-end gap-2">
                     {onDownload && (
-                      <button
-                        onClick={() => onDownload(deployment)}
-                        className="p-1.5 rounded-lg transition-colors text-green-600 hover:bg-green-50 cursor-pointer"
-                        title="Download All Files (ZIP)"
-                      >
-                        <Download className="h-4 w-4" />
-                      </button>
+                      <Tooltip content="Download All Files (ZIP)" size="sm" align="right">
+                        <button
+                          onClick={() => onDownload(deployment)}
+                          className="p-1.5 rounded-lg transition-colors text-green-600 hover:bg-green-50 cursor-pointer"
+                        >
+                          <Download className="h-4 w-4" />
+                        </button>
+                      </Tooltip>
                     )}
-                    <button
-                      onClick={() => onViewComments(deployment)}
-                      className="p-1.5 text-purple-600 hover:bg-purple-50 rounded-lg transition-colors cursor-pointer"
-                      title="Comments & History"
-                    >
-                      <MessageSquare className="h-4 w-4" />
-                    </button>
-                    <button
-                      onClick={canManageOnprem ? () => onEdit(deployment) : undefined}
-                      disabled={!canManageOnprem}
-                      className={`p-1.5 rounded-lg transition-colors ${
-                        canManageOnprem
-                          ? 'text-orange-600 hover:bg-orange-50 cursor-pointer'
-                          : 'text-gray-300 cursor-not-allowed'
-                      }`}
-                      title={canManageOnprem ? 'Edit' : 'You do not have permission to edit'}
-                    >
-                      <Pencil className="h-4 w-4" />
-                    </button>
+                    <Tooltip content="View Comments & Deployment History" size="sm" align="right">
+                      <button
+                        onClick={() => onViewComments(deployment)}
+                        className="p-1.5 text-purple-600 hover:bg-purple-50 rounded-lg transition-colors cursor-pointer"
+                      >
+                        <MessageSquare className="h-4 w-4" />
+                      </button>
+                    </Tooltip>
+                    <Tooltip content={canManageOnprem ? 'Edit Deployment' : 'You do not have permission to edit'} size="sm" align="right">
+                      <button
+                        onClick={canManageOnprem ? () => onEdit(deployment) : undefined}
+                        disabled={!canManageOnprem}
+                        className={`p-1.5 rounded-lg transition-colors ${
+                          canManageOnprem
+                            ? 'text-orange-600 hover:bg-orange-50 cursor-pointer'
+                            : 'text-gray-300 cursor-not-allowed'
+                        }`}
+                      >
+                        <Pencil className="h-4 w-4" />
+                      </button>
+                    </Tooltip>
                     {onRecordPatch && canManageOnprem && shouldShowIndicator && (
-                      <button
-                        onClick={() => onRecordPatch(deployment)}
-                        className="p-1.5 rounded-lg transition-colors text-emerald-600 hover:bg-emerald-50 cursor-pointer"
-                        title="Record Patch Deployment"
-                      >
-                        <CheckCheck className="h-4 w-4" />
-                      </button>
+                      <Tooltip content="Record Patch Deployment" size="sm" align="right">
+                        <button
+                          onClick={() => onRecordPatch(deployment)}
+                          className="p-1.5 rounded-lg transition-colors text-emerald-600 hover:bg-emerald-50 cursor-pointer"
+                        >
+                          <CheckCheck className="h-4 w-4" />
+                        </button>
+                      </Tooltip>
                     )}
-                    <button
-                      onClick={canDeleteOnprem ? () => onDelete(deployment) : undefined}
-                      disabled={!canDeleteOnprem}
-                      className={`p-1.5 rounded-lg transition-colors ${
-                        canDeleteOnprem
-                          ? 'text-red-600 hover:bg-red-50 cursor-pointer'
-                          : 'text-gray-300 cursor-not-allowed'
-                      }`}
-                      title={canDeleteOnprem ? 'Delete' : 'You do not have permission to delete'}
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </button>
+                    <Tooltip content={canDeleteOnprem ? 'Delete Deployment' : 'You do not have permission to delete'} size="sm" align="right">
+                      <button
+                        onClick={canDeleteOnprem ? () => onDelete(deployment) : undefined}
+                        disabled={!canDeleteOnprem}
+                        className={`p-1.5 rounded-lg transition-colors ${
+                          canDeleteOnprem
+                            ? 'text-red-600 hover:bg-red-50 cursor-pointer'
+                            : 'text-gray-300 cursor-not-allowed'
+                        }`}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    </Tooltip>
                   </div>
                 </td>
               </tr>

@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
-import { Plus, AlertCircle } from 'lucide-react';
-import { Button } from '@/components/ui';
+import { useNavigate } from 'react-router-dom';
+import { AlertCircle } from 'lucide-react';
 import {
   OnpremFilters,
   OnpremTable,
@@ -12,13 +11,11 @@ import {
   PatchAlertModal,
 } from '@/components/onprem';
 import { useOnpremStore } from '@/stores';
-import { usePermissions } from '@/hooks/usePermissions';
 import { onpremApi } from '@/api';
 import type { OnpremDeployment } from '@/types';
 
 const OnpremClientsTab = () => {
   const navigate = useNavigate();
-  const { canManageOnprem } = usePermissions();
   const { deployments, pagination, isLoading, fetchDeployments, setPage } = useOnpremStore();
 
   const [deleteDeployment, setDeleteDeployment] = useState<OnpremDeployment | null>(null);
@@ -64,19 +61,6 @@ const OnpremClientsTab = () => {
 
   return (
     <div>
-      {/* Header with Register Button */}
-      <div className="flex items-center justify-between mb-6">
-        <div></div>
-        {canManageOnprem && (
-          <Link to="/onprem/register">
-            <Button className="shadow-md shadow-primary-500/20">
-              <Plus className="h-4 w-4 mr-2" />
-              Register New Client
-            </Button>
-          </Link>
-        )}
-      </div>
-
       {/* Notification Banner */}
       {notification && (
         <div

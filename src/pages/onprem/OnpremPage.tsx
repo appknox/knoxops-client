@@ -1,9 +1,12 @@
-import { NavLink, Outlet, Navigate, useLocation, useMatch } from 'react-router-dom';
+import { NavLink, Outlet, Navigate, useLocation, useMatch, Link } from 'react-router-dom';
+import { Plus } from 'lucide-react';
+import { Button } from '@/components/ui';
+import { usePermissions } from '@/hooks/usePermissions';
 
 const tabs = [
   { path: '/onprem/clients', label: 'Clients' },
   { path: '/onprem/licence-requests', label: 'Licence Requests' },
-  { path: '/onprem/releases', label: 'Releases' },
+  { path: '/onprem/releases', label: 'OVA Releases' },
   { path: '/onprem/notifications', label: 'Notifications' },
 ];
 
@@ -12,6 +15,7 @@ const inactiveClass = 'border-transparent text-gray-500 hover:text-gray-700';
 
 const OnpremPage = () => {
   const { pathname } = useLocation();
+  const { canManageOnprem } = usePermissions();
   const detailMatch = useMatch('/onprem/:id');
   const knownSlugs = new Set(['clients', 'licence-requests', 'releases', 'notifications']);
   const isDetailPage = detailMatch && !knownSlugs.has(detailMatch.params.id ?? '');
@@ -29,7 +33,7 @@ const OnpremPage = () => {
           Monitor and manage on-premise deployments across all clients.
         </p>
       </div>
-      <div className="border-b border-gray-200 mb-6">
+      <div className="border-b border-gray-200 mb-6 flex items-end justify-between">
         <nav className="flex gap-4">
           {tabs.map((tab) => {
             const forceActive = isDetailPage && tab.path === '/onprem/clients';
@@ -48,6 +52,14 @@ const OnpremPage = () => {
             );
           })}
         </nav>
+        {canManageOnprem && (
+          <Link to="/onprem/register" className="pb-3">
+            <Button size="sm" className="shadow-md shadow-primary-500/20">
+              <Plus className="h-4 w-4 mr-1.5" />
+              Register New Client
+            </Button>
+          </Link>
+        )}
       </div>
       <Outlet />
     </div>
