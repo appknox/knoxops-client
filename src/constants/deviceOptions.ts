@@ -7,6 +7,13 @@ export const PURPOSE_OPTIONS = [
   { value: 'Marketing', label: 'Marketing' },
   { value: 'Sales', label: 'Sales' },
   { value: 'onPrem', label: 'On-Prem' },
+  { value: 'available', label: 'Available' },
+  { value: 'csTeam', label: 'CS Team' },
+  { value: 'partner', label: 'Partner' },
+  { value: 'reserved', label: 'Reserved' },
+  { value: 'staging', label: 'Staging' },
+  { value: 'notUsable', label: 'Not Usable' },
+  { value: 'toBeRepaired', label: 'To Be Repaired' },
   { value: '__other__', label: 'Other (enter manually)' },
 ];
 

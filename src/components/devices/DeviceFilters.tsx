@@ -11,6 +11,8 @@ const platformOptions = [
   { value: 'macOS', label: 'macOS' },
   { value: 'Windows', label: 'Windows' },
   { value: 'Linux', label: 'Linux' },
+  { value: 'Cambrionix', label: 'Cambrionix' },
+  { value: 'Anker', label: 'Anker' },
 ];
 
 const typeOptions = [
@@ -23,7 +25,10 @@ const statusOptions = [
   { value: 'active', label: 'In Inventory' },
   { value: 'inactive', label: 'Checked out of inventory' },
   { value: 'maintenance', label: 'Out for repair' },
-  { value: 'decommissioned', label: 'To be sold' },
+  { value: 'decommissioned', label: 'Removed from inventory' },
+  { value: 'for_sale', label: 'For Sale' },
+  { value: 'sold', label: 'Sold' },
+  { value: 'not_verified', label: 'Not Verified' },
 ];
 
 const purposeOptions = [
@@ -44,7 +49,7 @@ const DeviceFilters = () => {
           <SearchInput
             value={filters.search}
             onChange={(value) => setFilters({ search: value })}
-            placeholder="Search devices, serials..."
+            placeholder="Search devices, serials, assigned to..."
           />
         </div>
 

@@ -68,6 +68,7 @@ interface DeviceTableProps {
   onEdit: (device: DeviceListItem) => void;
   onDelete: (device: DeviceListItem) => void;
   onViewHistory: (device: DeviceListItem) => void;
+  onRowClick: (device: DeviceListItem) => void;
   isLoading?: boolean;
 }
 
@@ -78,6 +79,7 @@ const DeviceTable = ({
   onEdit,
   onDelete,
   onViewHistory,
+  onRowClick,
   isLoading,
 }: DeviceTableProps) => {
   const { canManageDevices, canDeleteDevices } = usePermissions();
@@ -131,7 +133,11 @@ const DeviceTable = ({
           </thead>
           <tbody className="divide-y divide-gray-200">
             {devices.map((device) => (
-              <tr key={device.id} className="hover:bg-gray-50">
+              <tr
+                key={device.id}
+                className="hover:bg-gray-50 cursor-pointer"
+                onClick={() => onRowClick(device)}
+              >
                 <td className="px-6 py-4 whitespace-nowrap">
                   <div className="flex items-center gap-3">
                     <PlatformIcon platform={device.platform} type={device.type} />
@@ -157,7 +163,7 @@ const DeviceTable = ({
                     <span className="text-sm text-gray-400">Unassigned</span>
                   )}
                 </td>
-                <td className="px-6 py-4 whitespace-nowrap text-right">
+                <td className="px-6 py-4 whitespace-nowrap text-right" onClick={(e) => e.stopPropagation()}>
                   <div className="flex items-center justify-end gap-2">
                     <button
                       onClick={() => onViewHistory(device)}

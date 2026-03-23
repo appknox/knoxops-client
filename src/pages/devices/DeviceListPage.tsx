@@ -120,6 +120,7 @@ const DeviceListPage = () => {
             onEdit={handleEditDevice}
             onDelete={setDeleteDevice}
             onViewHistory={setHistoryDevice}
+            onRowClick={handleEditDevice}
             isLoading={isLoading}
           />
 
@@ -135,6 +136,7 @@ const DeviceListPage = () => {
         isOpen={!!editDevice}
         onClose={() => setEditDevice(null)}
         device={editDevice}
+        readOnly={!canManageDevices}
       />
 
       <DeleteDeviceDialog
