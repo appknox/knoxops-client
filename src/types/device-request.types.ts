@@ -15,6 +15,7 @@ export interface DeviceRequest {
   osVersion?: string | null;
   purpose: string;
   requestingFor?: string | null;
+  additionalDetails?: string | null;
   status: DeviceRequestStatus;
   rejectionReason?: string | null;
   linkedDeviceId?: string | null;
@@ -57,6 +58,7 @@ export interface CreateDeviceRequestInput {
   osVersion?: string;
   purpose: string;
   requestingFor: string;
+  additionalDetails?: string;
 }
 
 export interface SuggestedDevice {

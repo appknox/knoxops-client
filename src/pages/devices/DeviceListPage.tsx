@@ -1,54 +1,13 @@
-import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { useState } from 'react';
+import { Link, NavLink, Outlet } from 'react-router-dom';
 import { Plus } from 'lucide-react';
 import { Button } from '@/components/ui';
-import {
-  DeviceFilters,
-  DeviceTable,
-  DeviceSummaryCards,
-  EditDeviceModal,
-  DeleteDeviceDialog,
-  DeviceAuditLogsModal,
-  RequestDeviceModal,
-  DeviceRequestsTab,
-} from '@/components/devices';
-import { useDeviceStore } from '@/stores';
+import { RequestDeviceModal } from '@/components/devices';
 import { usePermissions } from '@/hooks/usePermissions';
-import { devicesApi } from '@/api';
-import type { Device, DeviceListItem } from '@/types';
 
 const DeviceListPage = () => {
   const { canManageDevices } = usePermissions();
-  const { devices, pagination, stats, isLoading, fetchDevices, fetchStats, setPage } =
-    useDeviceStore();
-
-  const [editDevice, setEditDevice] = useState<Device | null>(null);
-  const [deleteDevice, setDeleteDevice] = useState<DeviceListItem | null>(null);
-  const [historyDevice, setHistoryDevice] = useState<DeviceListItem | null>(null);
   const [showRequestModal, setShowRequestModal] = useState(false);
-  const [activeTab, setActiveTab] = useState<'inventory' | 'requests'>('inventory');
-
-  // Fetch full device details for edit modal
-  const handleEditDevice = async (device: DeviceListItem) => {
-    try {
-      const fullDevice = await devicesApi.getById(device.id);
-      setEditDevice(fullDevice);
-    } catch (error) {
-      console.error('Failed to fetch device details:', error);
-    }
-  };
-
-  useEffect(() => {
-    fetchDevices();
-    fetchStats();
-  }, [fetchDevices, fetchStats]);
-
-  useEffect(() => {
-    if (activeTab === 'inventory') {
-      fetchDevices();
-      fetchStats();
-    }
-  }, [activeTab]);
 
   return (
     <div>
@@ -83,74 +42,37 @@ const DeviceListPage = () => {
       {/* Tabs */}
       <div className="mb-6 border-b border-gray-200">
         <div className="flex gap-8">
-          <button
-            onClick={() => setActiveTab('inventory')}
-            className={`py-3 px-1 border-b-2 font-medium text-sm transition-colors ${
-              activeTab === 'inventory'
-                ? 'border-primary-600 text-primary-600'
-                : 'border-transparent text-gray-600 hover:text-gray-900'
-            }`}
+          <NavLink
+            to="/devices/inventory"
+            className={({ isActive }) =>
+              `py-3 px-1 border-b-2 font-medium text-sm transition-colors ${
+                isActive
+                  ? 'border-primary-600 text-primary-600'
+                  : 'border-transparent text-gray-600 hover:text-gray-900'
+              }`
+            }
           >
             Inventory
-          </button>
-          <button
-            onClick={() => setActiveTab('requests')}
-            className={`py-3 px-1 border-b-2 font-medium text-sm transition-colors ${
-              activeTab === 'requests'
-                ? 'border-primary-600 text-primary-600'
-                : 'border-transparent text-gray-600 hover:text-gray-900'
-            }`}
+          </NavLink>
+          <NavLink
+            to="/devices/requests"
+            className={({ isActive }) =>
+              `py-3 px-1 border-b-2 font-medium text-sm transition-colors ${
+                isActive
+                  ? 'border-primary-600 text-primary-600'
+                  : 'border-transparent text-gray-600 hover:text-gray-900'
+              }`
+            }
           >
             {canManageDevices ? 'Requests' : 'My Requests'}
-          </button>
+          </NavLink>
         </div>
       </div>
 
-      {/* Tab Content */}
-      {activeTab === 'inventory' ? (
-        <>
-          {/* Filters */}
-          <DeviceFilters />
+      {/* Tab Content via Outlet */}
+      <Outlet />
 
-          {/* Device Table */}
-          <DeviceTable
-            devices={devices}
-            pagination={pagination}
-            onPageChange={setPage}
-            onEdit={handleEditDevice}
-            onDelete={setDeleteDevice}
-            onViewHistory={setHistoryDevice}
-            onRowClick={handleEditDevice}
-            isLoading={isLoading}
-          />
-
-          {/* Summary Cards */}
-          <DeviceSummaryCards stats={stats} />
-        </>
-      ) : (
-        <DeviceRequestsTab />
-      )}
-
-      {/* Modals */}
-      <EditDeviceModal
-        isOpen={!!editDevice}
-        onClose={() => setEditDevice(null)}
-        device={editDevice}
-        readOnly={!canManageDevices}
-      />
-
-      <DeleteDeviceDialog
-        isOpen={!!deleteDevice}
-        onClose={() => setDeleteDevice(null)}
-        device={deleteDevice}
-      />
-
-      <DeviceAuditLogsModal
-        isOpen={!!historyDevice}
-        onClose={() => setHistoryDevice(null)}
-        device={historyDevice}
-      />
-
+      {/* Request Device Modal */}
       <RequestDeviceModal
         isOpen={showRequestModal}
         onClose={() => setShowRequestModal(false)}

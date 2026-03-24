@@ -6,6 +6,8 @@ import type { DeviceRequest } from '@/types/device-request.types.js';
 import type { SuggestedDevice } from '@/types/device-request.types.js';
 import { Search, X } from 'lucide-react';
 
+const MOBILE_PLATFORMS = ['iOS', 'Android'];
+
 interface CompleteRequestModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -22,26 +24,51 @@ export function CompleteRequestModal({ isOpen, onClose, requestId, request }: Co
   const [isLoading, setIsLoading] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showDropdown, setShowDropdown] = useState(false);
+  const [osVersions, setOsVersions] = useState<string[]>([]);
+  const [selectedOsVersion, setSelectedOsVersion] = useState<string>(request.osVersion ?? '');
+
+  const showOsFilter = MOBILE_PLATFORMS.includes(request.platform) &&
+    ['mobile', 'tablet'].includes(request.deviceType);
 
   useEffect(() => {
     if (isOpen) {
-      fetchSuggested();
+      setSelectedOsVersion(request.osVersion ?? '');
+      if (showOsFilter) {
+        fetchOsVersions();
+      }
+      fetchSuggested(request.osVersion ?? undefined);
     }
   }, [isOpen]);
 
-  const fetchSuggested = async () => {
+  const fetchOsVersions = async () => {
+    try {
+      const versions = await devicesApi.getDistinctOsVersions(
+        request.platform as 'iOS' | 'Android'
+      );
+      setOsVersions(versions);
+    } catch (error) {
+      console.error('Failed to fetch OS versions:', error);
+    }
+  };
+
+  const fetchSuggested = async (osVersion?: string) => {
     setIsLoading(true);
     try {
-      const results = await devicesApi.suggestDevices(
-        request.platform,
-        request.osVersion ?? undefined
-      );
+      const results = await devicesApi.suggestDevices(request.platform, osVersion);
       setSuggestedDevices(results);
     } catch (error) {
       console.error('Failed to fetch suggested devices:', error);
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const handleOsVersionChange = (version: string) => {
+    setSelectedOsVersion(version);
+    setSelectedDevice(null);
+    setSelectedDeviceId(undefined);
+    setSearchQuery('');
+    fetchSuggested(version || undefined);
   };
 
   const filteredDevices = suggestedDevices.filter((device) => {
@@ -81,11 +108,12 @@ export function CompleteRequestModal({ isOpen, onClose, requestId, request }: Co
     setSelectedDeviceId(undefined);
     setSearchQuery('');
     setShowDropdown(false);
+    setSelectedOsVersion(request.osVersion ?? '');
     onClose();
   };
 
   const deviceTypeLabel = request.deviceType.replace('_', ' ');
-  const criteriaLabel = [request.platform, request.osVersion ? `${request.osVersion}+` : null]
+  const criteriaLabel = [request.platform, selectedOsVersion ? `${selectedOsVersion}+` : null]
     .filter(Boolean)
     .join(' · ');
 
@@ -101,6 +129,23 @@ export function CompleteRequestModal({ isOpen, onClose, requestId, request }: Co
             <div><span className="font-medium text-gray-700">Assigning to:</span> {request.requestingFor}</div>
           )}
         </div>
+
+        {/* OS Version filter (mobile/tablet only) */}
+        {showOsFilter && osVersions.length > 0 && (
+          <div>
+            <label className="block text-sm font-medium text-gray-900 mb-2">Filter by OS Version</label>
+            <select
+              value={selectedOsVersion}
+              onChange={(e) => handleOsVersionChange(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
+            >
+              <option value="">All {request.platform} versions</option>
+              {osVersions.map((v) => (
+                <option key={v} value={v}>{v}</option>
+              ))}
+            </select>
+          </div>
+        )}
 
         {/* Device search */}
         <div>
@@ -118,7 +163,7 @@ export function CompleteRequestModal({ isOpen, onClose, requestId, request }: Co
                 setShowDropdown(true);
               }}
               onFocus={() => setShowDropdown(true)}
-              placeholder={`Search ${request.platform} ${request.osVersion ? `${request.osVersion}+` : ''} devices...`}
+              placeholder={`Search ${request.platform}${selectedOsVersion ? ` ${selectedOsVersion}` : ''} devices...`}
               disabled={isLoading}
               className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 disabled:bg-gray-50"
             />
@@ -130,7 +175,7 @@ export function CompleteRequestModal({ isOpen, onClose, requestId, request }: Co
                 ) : filteredDevices.length === 0 ? (
                   <div className="p-4 text-center text-sm">
                     <div className="text-gray-600">
-                      No {request.platform}{request.osVersion ? ` ${request.osVersion}+` : ''} devices in inventory
+                      No {request.platform}{selectedOsVersion ? ` ${selectedOsVersion}` : ''} devices in inventory
                     </div>
                     <div className="text-gray-400 text-xs mt-1">You can still complete without assigning a device</div>
                   </div>

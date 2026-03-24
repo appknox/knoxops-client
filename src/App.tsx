@@ -2,9 +2,9 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AppLayout } from '@/components/layout';
 import { LoginPage, AcceptInvitePage, AuthCallback, AuthError } from '@/pages/auth';
 import { DashboardPage } from '@/pages/dashboard/DashboardPage';
-import { DeviceListPage, RegisterDevicePage } from '@/pages/devices';
+import { DeviceListPage, RegisterDevicePage, InventoryTab, DeviceRequestsTab } from '@/pages/devices';
 import { UserListPage, AddUserPage, EditUserPage } from '@/pages/users';
-import { SettingsPage, InvitesTab } from '@/pages/settings';
+import { SettingsPage, InvitesTab, IntegrationsTab, NotificationsSettingsTab } from '@/pages/settings';
 import { OnpremPage, OnpremClientsTab, NotificationsTab, ReleasesTab, RegisterOnpremPage, OnpremDetailPage } from '@/pages/onprem';
 import { AllLicenseRequestsTab } from '@/components/onprem';
 import { ProfilePage } from '@/pages/profile';
@@ -23,7 +23,11 @@ function App() {
         <Route element={<AppLayout />}>
           <Route path="/" element={<Navigate to="/dashboard" replace />} />
           <Route path="/dashboard" element={<DashboardPage />} />
-          <Route path="/devices" element={<DeviceListPage />} />
+          <Route path="/devices" element={<DeviceListPage />}>
+            <Route index element={<Navigate to="inventory" replace />} />
+            <Route path="inventory" element={<InventoryTab />} />
+            <Route path="requests" element={<DeviceRequestsTab />} />
+          </Route>
           <Route path="/devices/register" element={<RegisterDevicePage />} />
 
           {/* Settings with nested routes (admin only - protected in AppLayout) */}
@@ -33,6 +37,8 @@ function App() {
             <Route path="users/add" element={<AddUserPage />} />
             <Route path="users/:id/edit" element={<EditUserPage />} />
             <Route path="invites" element={<InvitesTab />} />
+            <Route path="integrations" element={<IntegrationsTab />} />
+            <Route path="notifications" element={<NotificationsSettingsTab />} />
           </Route>
 
           {/* On-Prem management routes with nested layout */}
