@@ -12,7 +12,7 @@ import { PURPOSE_OPTIONS } from '@/constants/deviceOptions';
 import type { DeviceType, DeviceStatus } from '@/types';
 
 const deviceTypes = ['server', 'workstation', 'mobile', 'tablet', 'iot', 'network', 'charging_hub', 'other'] as const;
-const deviceStatuses = ['active', 'inactive', 'maintenance', 'decommissioned'] as const;
+const deviceStatuses = ['in_inventory', 'checked_out', 'maintenance', 'decommissioned', 'for_sale', 'sold', 'not_verified'] as const;
 
 const createDeviceSchema = z.object({
   name: z.string().min(1, 'Device ID is required').max(255).optional(), // Auto-generated
@@ -53,8 +53,8 @@ const typeOptions = [
 ];
 
 const statusOptions = [
-  { value: 'active', label: 'In Inventory' },
-  { value: 'inactive', label: 'Checked out of inventory' },
+  { value: 'in_inventory', label: 'In Inventory' },
+  { value: 'checked_out', label: 'Checked out of inventory' },
   { value: 'maintenance', label: 'Out for repair' },
   { value: 'decommissioned', label: 'To be sold' },
 ];
@@ -122,7 +122,7 @@ const RegisterDevicePage = () => {
   } = useForm<CreateDeviceFormData>({
     resolver: zodResolver(createDeviceSchema),
     defaultValues: {
-      status: 'active',
+      status: 'in_inventory',
       type: 'mobile',
     },
   });

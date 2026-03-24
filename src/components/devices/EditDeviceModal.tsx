@@ -16,7 +16,7 @@ const updateDeviceSchema = z.object({
   udid: z.string().optional(),
   modelNumber: z.string().optional(),
   type: z.enum(['server', 'workstation', 'mobile', 'tablet', 'iot', 'network', 'charging_hub', 'other']),
-  status: z.enum(['active', 'inactive', 'maintenance', 'decommissioned']),
+  status: z.enum(['in_inventory', 'checked_out', 'maintenance', 'decommissioned', 'for_sale', 'sold', 'not_verified']),
   manufacturer: z.string().max(100).optional(),
   model: z.string().max(100).optional(),
   macAddress: z.string().max(17).optional(),
@@ -56,8 +56,8 @@ const typeOptions = [
 ];
 
 const statusOptions = [
-  { value: 'active', label: 'In Inventory' },
-  { value: 'inactive', label: 'Checked out of inventory' },
+  { value: 'in_inventory', label: 'In Inventory' },
+  { value: 'checked_out', label: 'Checked out of inventory' },
   { value: 'maintenance', label: 'Out for repair' },
   { value: 'decommissioned', label: 'Removed from inventory' },
   { value: 'for_sale', label: 'For Sale' },
