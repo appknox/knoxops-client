@@ -13,17 +13,27 @@ import type { DeviceRequest } from '@/types/device-request.types.js';
 const PAGE_SIZE = 20;
 
 export function DeviceRequestsTab() {
-  const { requests, fetchRequests, pagination, isLoading } = useDeviceRequestStore();
+  const { requests, fetchRequests, approveRequest, pagination, isLoading } = useDeviceRequestStore();
   const { user } = useAuthStore();
   const { canManageDevices } = usePermissions();
   const [page, setPage] = useState(1);
   const [rejectingRequest, setRejectingRequest] = useState<DeviceRequest | null>(null);
   const [completingRequest, setCompletingRequest] = useState<DeviceRequest | null>(null);
   const [detailsRequest, setDetailsRequest] = useState<DeviceRequest | null>(null);
+  const [approvingId, setApprovingId] = useState<string | null>(null);
 
   useEffect(() => {
     fetchRequests();
   }, [fetchRequests]);
+
+  const handleApprove = async (id: string) => {
+    setApprovingId(id);
+    try {
+      await approveRequest(id);
+    } finally {
+      setApprovingId(null);
+    }
+  };
 
   const isAdmin = canManageDevices;
   const displayedRequests = isAdmin ? requests : requests.filter((r) => r.requestedBy === user?.id);
@@ -115,10 +125,9 @@ export function DeviceRequestsTab() {
                           <Button
                             size="sm"
                             variant="outline"
-                            onClick={() => {
-                              // Approve logic would call approveRequest from store
-                              useDeviceRequestStore.getState().approveRequest(request.id);
-                            }}
+                            onClick={() => handleApprove(request.id)}
+                            disabled={approvingId === request.id}
+                            isLoading={approvingId === request.id}
                           >
                             Approve
                           </Button>

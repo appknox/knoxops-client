@@ -16,6 +16,7 @@ interface DeviceFilters {
   type: DeviceType | '';
   status: DeviceStatus | '';
   platform: string;
+  osVersions: string[];
   purpose: string;
   assignedTo: string;
 }
@@ -55,6 +56,7 @@ const initialFilters: DeviceFilters = {
   type: '',
   status: '',
   platform: '',
+  osVersions: [],
   purpose: '',
   assignedTo: '',
 };
@@ -91,6 +93,7 @@ export const useDeviceStore = create<DeviceState>((set, get) => ({
       if (filters.type) params.type = filters.type;
       if (filters.status) params.status = filters.status;
       if (filters.platform) params.platform = filters.platform;
+      if (filters.osVersions.length > 0) params.osVersion = filters.osVersions.join(',');
       if (filters.purpose) params.purpose = filters.purpose;
       if (filters.assignedTo) params.assignedTo = filters.assignedTo;
 

@@ -14,6 +14,7 @@ const requestSchema = z.object({
   osVersion: z.string().optional(),
   purpose: z.string().min(1, 'Purpose is required'),
   requestingFor: z.string().min(1, 'Requesting for is required'),
+  additionalDetails: z.string().optional(),
 });
 
 type RequestFormData = z.infer<typeof requestSchema>;
@@ -237,6 +238,16 @@ export function RequestDeviceModal({ isOpen, onClose }: RequestDeviceModalProps)
             Pre-filled with your name. Change if requesting on behalf of someone else.
           </p>
           {errors.requestingFor && <p className="mt-1 text-sm text-red-600">{errors.requestingFor.message}</p>}
+        </div>
+
+        {/* Additional Details */}
+        <div>
+          <label className="block text-sm font-medium text-gray-900 mb-2">Additional Details</label>
+          <Textarea
+            {...register('additionalDetails')}
+            placeholder="Any specific requirements, preferences, or notes..."
+            rows={3}
+          />
         </div>
 
         <div className="flex justify-end gap-3 pt-6 border-t">

@@ -1,5 +1,5 @@
 export type DeviceType = 'server' | 'workstation' | 'mobile' | 'tablet' | 'iot' | 'network' | 'charging_hub' | 'other';
-export type DeviceStatus = 'active' | 'inactive' | 'maintenance' | 'decommissioned';
+export type DeviceStatus = 'in_inventory' | 'checked_out' | 'maintenance' | 'decommissioned' | 'for_sale' | 'sold' | 'not_verified';
 
 export interface DeviceMetadata {
   // Technical specs
@@ -26,6 +26,7 @@ export interface DeviceListItem {
   type: DeviceType;
   model: string | null;
   platform: string | null;
+  osVersion: string | null;
   purpose: string | null;
   assignedTo: string | null;
 }
@@ -44,6 +45,10 @@ export interface Device {
   // Operational fields (direct columns)
   purpose: string | null;
   assignedTo: string | null;
+  // Device sale fields
+  condition?: string | null;
+  conditionNotes?: string | null;
+  askingPrice?: number | null;
   // Technical specs in metadata
   metadata: DeviceMetadata | null;
   registeredBy: string | null;
@@ -64,6 +69,10 @@ export interface CreateDeviceInput {
   // Operational fields (direct columns)
   purpose?: string;
   assignedTo?: string;
+  // Device sale fields
+  condition?: string;
+  conditionNotes?: string;
+  askingPrice?: number;
   // Technical specs in metadata
   metadata?: DeviceMetadata;
 }
@@ -77,6 +86,7 @@ export interface ListDevicesParams {
   type?: DeviceType;
   status?: DeviceStatus;
   platform?: string;
+  osVersion?: string;
   purpose?: string;
   assignedTo?: string;
   sortBy?: 'name' | 'createdAt' | 'updatedAt' | 'status' | 'type';

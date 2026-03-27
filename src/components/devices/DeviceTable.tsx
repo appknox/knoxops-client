@@ -1,4 +1,4 @@
-import { MessageSquare, Pencil, Trash2, Monitor, Smartphone, Tablet } from 'lucide-react';
+import { MessageSquare, Pencil, Trash2, Monitor, Smartphone, Tablet, Plug } from 'lucide-react';
 import { Avatar, Pagination } from '@/components/ui';
 import { DeviceStatusBadge } from './DeviceStatusBadge';
 import { usePermissions } from '@/hooks/usePermissions';
@@ -7,6 +7,16 @@ import type { DeviceListItem } from '@/types';
 // Platform icon component
 const PlatformIcon = ({ platform, type }: { platform: string | null; type?: string }) => {
   const platformLower = platform?.toLowerCase();
+  const typeLower = type?.toLowerCase();
+
+  // Charging hub icon (Cambrionix)
+  if (typeLower === 'charging_hub' || platformLower === 'cambrionix') {
+    return (
+      <div className="w-8 h-8 bg-orange-50 rounded-lg flex items-center justify-center">
+        <Plug className="h-4 w-4 text-orange-600" />
+      </div>
+    );
+  }
 
   if (platformLower === 'ios') {
     // Apple/iOS icon
@@ -31,7 +41,6 @@ const PlatformIcon = ({ platform, type }: { platform: string | null; type?: stri
   }
 
   // Fallback to type-based icons when platform is not set
-  const typeLower = type?.toLowerCase();
   if (typeLower === 'mobile') {
     return (
       <div className="w-8 h-8 bg-blue-50 rounded-lg flex items-center justify-center">
@@ -68,6 +77,7 @@ interface DeviceTableProps {
   onEdit: (device: DeviceListItem) => void;
   onDelete: (device: DeviceListItem) => void;
   onViewHistory: (device: DeviceListItem) => void;
+  onRowClick: (device: DeviceListItem) => void;
   isLoading?: boolean;
 }
 
@@ -78,6 +88,7 @@ const DeviceTable = ({
   onEdit,
   onDelete,
   onViewHistory,
+  onRowClick,
   isLoading,
 }: DeviceTableProps) => {
   const { canManageDevices, canDeleteDevices } = usePermissions();
@@ -131,7 +142,11 @@ const DeviceTable = ({
           </thead>
           <tbody className="divide-y divide-gray-200">
             {devices.map((device) => (
-              <tr key={device.id} className="hover:bg-gray-50">
+              <tr
+                key={device.id}
+                className="hover:bg-gray-50 cursor-pointer"
+                onClick={() => onRowClick(device)}
+              >
                 <td className="px-6 py-4 whitespace-nowrap">
                   <div className="flex items-center gap-3">
                     <PlatformIcon platform={device.platform} type={device.type} />
@@ -157,7 +172,7 @@ const DeviceTable = ({
                     <span className="text-sm text-gray-400">Unassigned</span>
                   )}
                 </td>
-                <td className="px-6 py-4 whitespace-nowrap text-right">
+                <td className="px-6 py-4 whitespace-nowrap text-right" onClick={(e) => e.stopPropagation()}>
                   <div className="flex items-center justify-end gap-2">
                     <button
                       onClick={() => onViewHistory(device)}

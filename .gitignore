@@ -17,6 +17,10 @@ dist-ssr
 .env.local
 .env.*.local
 
+# Planning / working documents (not for version control)
+PLANNER.md
+IMPLEMENTATION_PLAN.md
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

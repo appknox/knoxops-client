@@ -10,13 +10,19 @@ import { PURPOSE_OPTIONS } from '@/constants/deviceOptions';
 import { FetchDeviceWizard } from './FetchDeviceWizard';
 import type { Device, DeviceType, DeviceStatus } from '@/types';
 
+const conditionOptions = [
+  { value: 'Excellent', label: 'Excellent' },
+  { value: 'Good', label: 'Good' },
+  { value: 'Fair', label: 'Fair' },
+];
+
 const updateDeviceSchema = z.object({
   name: z.string().min(1, 'Device name is required').max(255),
   serialNumber: z.string().max(100).optional(),
   udid: z.string().optional(),
   modelNumber: z.string().optional(),
   type: z.enum(['server', 'workstation', 'mobile', 'tablet', 'iot', 'network', 'charging_hub', 'other']),
-  status: z.enum(['active', 'inactive', 'maintenance', 'decommissioned']),
+  status: z.enum(['in_inventory', 'checked_out', 'maintenance', 'decommissioned', 'for_sale', 'sold', 'not_verified']),
   manufacturer: z.string().max(100).optional(),
   model: z.string().max(100).optional(),
   macAddress: z.string().max(17).optional(),
@@ -28,9 +34,24 @@ const updateDeviceSchema = z.object({
   imei: z.string().optional(),
   imei2: z.string().optional(),
   simNumber: z.string().optional(),
+  adapterSerial: z.string().max(100).optional(),
+  powerCordSerial: z.string().max(100).optional(),
   purpose: z.string().optional(),
   assignedTo: z.string().optional(),
   description: z.string().optional(),
+  condition: z.string().optional(),
+  conditionNotes: z.string().optional(),
+  askingPrice: z.coerce.number().positive().optional().or(z.literal('')),
+}).refine((data) => {
+  // condition and askingPrice are required when status = for_sale
+  if (data.status === 'for_sale') {
+    if (!data.condition) return false;
+    if (data.askingPrice === '' || data.askingPrice === undefined) return false;
+  }
+  return true;
+}, {
+  message: 'Condition and Asking Price are required for For Sale devices',
+  path: ['condition'],
 });
 
 type UpdateDeviceFormData = z.infer<typeof updateDeviceSchema>;
@@ -39,6 +60,7 @@ interface EditDeviceModalProps {
   isOpen: boolean;
   onClose: () => void;
   device: Device | null;
+  readOnly?: boolean;
 }
 
 const typeOptions = [
@@ -53,10 +75,13 @@ const typeOptions = [
 ];
 
 const statusOptions = [
-  { value: 'active', label: 'In Inventory' },
-  { value: 'inactive', label: 'Checked out of inventory' },
+  { value: 'in_inventory', label: 'In Inventory' },
+  { value: 'checked_out', label: 'Checked out of inventory' },
   { value: 'maintenance', label: 'Out for repair' },
-  { value: 'decommissioned', label: 'To be sold' },
+  { value: 'decommissioned', label: 'Removed from inventory' },
+  { value: 'for_sale', label: 'For Sale' },
+  { value: 'sold', label: 'Sold' },
+  { value: 'not_verified', label: 'Not Verified' },
 ];
 
 const platformOptions = [
@@ -67,19 +92,20 @@ const platformOptions = [
   { value: 'Windows', label: 'Windows' },
   { value: 'Linux', label: 'Linux' },
   { value: 'Cambrionix', label: 'Cambrionix' },
+  { value: 'Anker', label: 'Anker' },
 ];
 
 const cpuArchOptions = [
   { value: '', label: 'Select Arch' },
-  { value: 'ARM64', label: 'ARM64 (Apple Silicon)' },
-  { value: 'x86_64', label: 'x86_64 (Intel/AMD)' },
   { value: 'ARM', label: 'ARM (32-bit)' },
+  { value: 'ARM64', label: 'ARM64 (64-bit)' },
+  { value: 'x86', label: 'x86 (32-bit)' },
+  { value: 'x86_64', label: 'x86_64 (64-bit)' },
 ];
 
 const purposeOptions = [
   { value: '', label: 'Select Purpose' },
   ...PURPOSE_OPTIONS.filter((opt) => opt.value !== '__other__'),
-  { value: 'toBeRepaired', label: 'To Be Repaired' },
 ];
 
 const colourOptions = [
@@ -114,7 +140,7 @@ const normalizeValue = (value: string, options: { value: string; label: string }
   return match?.value || value;
 };
 
-const EditDeviceModal = ({ isOpen, onClose, device }: EditDeviceModalProps) => {
+const EditDeviceModal = ({ isOpen, onClose, device, readOnly = false }: EditDeviceModalProps) => {
   const { updateDevice, isLoading } = useDeviceStore();
   const [serialError, setSerialError] = useState<string | null>(null);
   const [serialChecking, setSerialChecking] = useState(false);
@@ -150,10 +176,16 @@ const EditDeviceModal = ({ isOpen, onClose, device }: EditDeviceModalProps) => {
           imei: (device.metadata?.imei as string) || '',
           imei2: (device.metadata?.imei2 as string) || '',
           simNumber: (device.metadata?.simNumber as string) || '',
+          adapterSerial: (device.metadata?.adapterSerial as string) || '',
+          powerCordSerial: (device.metadata?.powerCordSerial as string) || '',
           // Operational fields from direct columns
           purpose: normalizeValue(device.purpose || '', purposeOptions),
           assignedTo: device.assignedTo || '',
           description: device.description || '',
+          // Device sale fields
+          condition: device.condition || '',
+          conditionNotes: device.conditionNotes || '',
+          askingPrice: device.askingPrice ? device.askingPrice.toString() : '',
         }
       : undefined,
   });
@@ -215,6 +247,9 @@ const EditDeviceModal = ({ isOpen, onClose, device }: EditDeviceModalProps) => {
       if (data.simNumber?.trim()) metadata.simNumber = data.simNumber.trim();
       // Network fields in metadata
       if (data.macAddress?.trim()) metadata.macAddress = data.macAddress.trim();
+      // Cambrionix component serials
+      if (data.adapterSerial?.trim()) metadata.adapterSerial = data.adapterSerial.trim();
+      if (data.powerCordSerial?.trim()) metadata.powerCordSerial = data.powerCordSerial.trim();
 
       await updateDevice(device.id, {
         name: data.name.trim(),
@@ -227,6 +262,10 @@ const EditDeviceModal = ({ isOpen, onClose, device }: EditDeviceModalProps) => {
         purpose: data.purpose?.trim() || undefined,
         assignedTo: data.assignedTo?.trim() || undefined,
         description: data.description?.trim() || undefined,
+        // Device sale fields
+        condition: data.condition?.trim() || undefined,
+        conditionNotes: data.conditionNotes?.trim() || undefined,
+        askingPrice: data.askingPrice && data.askingPrice !== '' ? Number(data.askingPrice) : undefined,
         // Technical specs + network in metadata
         ...(Object.keys(metadata).length > 0 ? { metadata } : {}),
       });
@@ -238,7 +277,7 @@ const EditDeviceModal = ({ isOpen, onClose, device }: EditDeviceModalProps) => {
   };
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title="Edit Device" size="lg">
+    <Modal isOpen={isOpen} onClose={onClose} title={readOnly ? 'Device Details' : 'Edit Device'} size="lg">
       <form onSubmit={handleSubmit(onSubmit)}>
         <div className="p-6 space-y-6 max-h-[60vh] overflow-y-auto">
           <div className="grid grid-cols-2 gap-4">
@@ -248,56 +287,133 @@ const EditDeviceModal = ({ isOpen, onClose, device }: EditDeviceModalProps) => {
               error={errors.name?.message}
               disabled
             />
-            <Select label="Type" options={typeOptions} {...register('type')} />
+            <Select label="Type" options={typeOptions} {...register('type')} disabled={readOnly} />
           </div>
 
           <div className="grid grid-cols-2 gap-4">
-            <Input label="Model" {...register('model')} error={errors.model?.message} />
+            <Input label="Model" {...register('model')} error={errors.model?.message} disabled={readOnly} />
             <Input
               label="Serial Number"
               {...register('serialNumber')}
-              onBlur={handleSerialBlur}
+              onBlur={readOnly ? undefined : handleSerialBlur}
               error={serialError ?? undefined}
+              disabled={readOnly}
               rightIcon={serialChecking ? <Loader2 className="h-4 w-4 animate-spin text-gray-400" /> : undefined}
             />
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
-            <Input label="Model Number" {...register('modelNumber')} placeholder="e.g. NNCK2 / A1779" />
-            <Input label="UDID" {...register('udid')} placeholder="Auto-filled from USB" />
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
-            <Select label="Purpose / Status" options={purposeOptions} {...register('purpose')} />
-            <Select label="Inventory Status" options={statusOptions} {...register('status')} />
-          </div>
-
-          {/* Technical Specs — only for mobile/workstation/tablet */}
-          {showTechSpecs && (
+          {/* Model Number & UDID — mobile/tablet only; charging_hub gets Model Number only */}
+          {(selectedType === 'mobile' || selectedType === 'tablet') && (
             <div className="grid grid-cols-2 gap-4">
-              <Select label="CPU-Arch" options={cpuArchOptions} {...register('cpuArch')} />
-              <Input label="OS Version" {...register('osVersion')} placeholder="e.g. 17.2 / 13" />
-              <Input label="ROM" {...register('rom')} placeholder="Auto-filled from USB" />
+              <Input label="Model Number" {...register('modelNumber')} placeholder="e.g. NNCK2 / A1779" disabled={readOnly} />
+              <Input label="UDID" {...register('udid')} placeholder="Auto-filled from USB" disabled={readOnly} />
             </div>
           )}
 
-          {/* Platform & Colour for all types */}
+          {/* TECHNICAL SPECS */}
+          {!isChargingHub && (
+            <div>
+              <h3 className="text-sm font-semibold text-gray-900 mb-4">Technical Specs</h3>
+              {showTechSpecs ? (
+                <div className="space-y-4">
+                  {/* Row 1: Platform | OS Version */}
+                  <div className="grid grid-cols-2 gap-4">
+                    <Select label="Platform" options={platformOptions} {...register('platform')} disabled={readOnly} />
+                    <Input label="OS Version" {...register('osVersion')} placeholder="e.g. 17.2 / 13" disabled={readOnly} />
+                  </div>
+                  {/* Row 2: CPU Arch | ROM */}
+                  <div className="grid grid-cols-2 gap-4">
+                    <Select label="CPU Arch" options={cpuArchOptions} {...register('cpuArch')} disabled={readOnly} />
+                    <Input label="ROM" {...register('rom')} placeholder="Auto-filled from USB" disabled={readOnly} />
+                  </div>
+                </div>
+              ) : (
+                <div className="grid grid-cols-2 gap-4">
+                  <Select label="Platform" options={platformOptions} {...register('platform')} disabled={readOnly} />
+                  <Select label="CPU Arch" options={cpuArchOptions} {...register('cpuArch')} disabled={readOnly} />
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Platform (charging_hub) + Colour — or Colour + MAC (mobile/tablet/other) */}
+          {isChargingHub ? (
+            <div className="grid grid-cols-3 gap-4">
+              <Select label="Platform" options={platformOptions} {...register('platform')} disabled={readOnly} />
+              <Input label="Model Number" {...register('modelNumber')} placeholder="e.g. CAM-15S" disabled={readOnly} />
+              <Select label="Colour" options={colourOptions} {...register('colour')} disabled={readOnly} />
+            </div>
+          ) : (
+            <div className="grid grid-cols-2 gap-4">
+              <Select label="Colour" options={colourOptions} {...register('colour')} disabled={readOnly} />
+              {showNetworkSection && (
+                <Input label="MAC Address" {...register('macAddress')} placeholder="XX:XX:XX:XX:XX:XX" disabled={readOnly} />
+              )}
+            </div>
+          )}
+
+          {/* CAMBRIONIX COMPONENTS — if platform is Cambrionix */}
+          {watch('platform') === 'Cambrionix' && (
+            <div className="grid grid-cols-2 gap-4">
+              <Input
+                label="Adapter Serial Number"
+                {...register('adapterSerial')}
+                placeholder="e.g. CAM-ADAPTER-12345"
+                disabled={readOnly}
+              />
+              <Input
+                label="Power Cord Serial Number"
+                {...register('powerCordSerial')}
+                placeholder="e.g. CAM-POWER-67890"
+                disabled={readOnly}
+              />
+            </div>
+          )}
+
           <div className="grid grid-cols-2 gap-4">
-            <Select label="Platform" options={platformOptions} {...register('platform')} />
-            <Select label="Colour" options={colourOptions} {...register('colour')} />
+            <Select label="Purpose / Status" options={purposeOptions} {...register('purpose')} disabled={readOnly} />
+            <Select label="Inventory Status" options={statusOptions} {...register('status')} disabled={readOnly} error={errors.status?.message} />
           </div>
+
+          {/* Device Sale Fields — only when status = for_sale */}
+          {selectedStatus === 'for_sale' && (
+            <div className="space-y-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+              <h3 className="text-sm font-semibold text-blue-900">Sale Information</h3>
+              <div className="grid grid-cols-2 gap-4">
+                <Select
+                  label="Condition *"
+                  options={conditionOptions}
+                  {...register('condition')}
+                  disabled={readOnly}
+                  error={errors.condition?.message}
+                />
+                <Input
+                  label="Asking Price (₹) *"
+                  type="number"
+                  step="0.01"
+                  {...register('askingPrice')}
+                  disabled={readOnly}
+                  error={errors.askingPrice?.message}
+                />
+              </div>
+              <Textarea
+                label="Condition Notes"
+                {...register('conditionNotes')}
+                placeholder="e.g. Minor scratches on back, battery health 85%..."
+                rows={2}
+                disabled={readOnly}
+              />
+            </div>
+          )}
 
           {/* NETWORK — only for mobile/tablet/workstation */}
           {showNetworkSection && (
             <>
-              <div className="grid grid-cols-2 gap-4">
-                <Input label="MAC Address" {...register('macAddress')} placeholder="XX:XX:XX:XX:XX:XX" />
-              </div>
 
               <div className="grid grid-cols-3 gap-4">
-                <Input label="IMEI 1" {...register('imei')} placeholder="IMEI 1" />
-                <Input label="IMEI 2" {...register('imei2')} placeholder="IMEI 2 (dual SIM)" />
-                <Input label="SIM Number" {...register('simNumber')} placeholder="SIM ICCID" />
+                <Input label="IMEI 1" {...register('imei')} placeholder="IMEI 1" disabled={readOnly} />
+                <Input label="IMEI 2" {...register('imei2')} placeholder="IMEI 2 (dual SIM)" disabled={readOnly} />
+                <Input label="SIM Number" {...register('simNumber')} placeholder="SIM ICCID" disabled={readOnly} />
               </div>
             </>
           )}
@@ -307,6 +423,7 @@ const EditDeviceModal = ({ isOpen, onClose, device }: EditDeviceModalProps) => {
               label="Assigned To"
               {...register('assignedTo')}
               placeholder="Search user..."
+              disabled={readOnly}
             />
           </div>
 
@@ -316,12 +433,13 @@ const EditDeviceModal = ({ isOpen, onClose, device }: EditDeviceModalProps) => {
               {...register('description')}
               placeholder="Add any additional notes or details about this device..."
               rows={3}
+              disabled={readOnly}
             />
           </div>
         </div>
 
         <div className="flex justify-between gap-3 px-6 py-4 border-t border-gray-200 bg-gray-50">
-          {(selectedType === 'mobile' || selectedType === 'tablet') && (
+          {!readOnly && (selectedType === 'mobile' || selectedType === 'tablet') && (
             <Button
               type="button"
               variant="outline"
@@ -333,14 +451,16 @@ const EditDeviceModal = ({ isOpen, onClose, device }: EditDeviceModalProps) => {
               Refetch Device Info
             </Button>
           )}
-          {selectedType !== 'mobile' && selectedType !== 'tablet' && <div />}
+          <div />
           <div className="flex gap-3">
             <Button type="button" variant="outline" onClick={onClose}>
-              Cancel
+              {readOnly ? 'Close' : 'Cancel'}
             </Button>
-            <Button type="submit" isLoading={isLoading} disabled={!!serialError}>
-              Save Changes
-            </Button>
+            {!readOnly && (
+              <Button type="submit" isLoading={isLoading} disabled={!!serialError}>
+                Save Changes
+              </Button>
+            )}
           </div>
         </div>
       </form>

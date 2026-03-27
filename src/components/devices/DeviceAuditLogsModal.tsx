@@ -27,10 +27,13 @@ interface DeviceAuditLogsModalProps {
 
 // Status label mapping (same as DeviceStatusBadge)
 const statusLabel: Record<string, string> = {
-  active: 'In Inventory',
-  inactive: 'Checked Out',
+  in_inventory: 'In Inventory',
+  checked_out: 'Checked Out',
   maintenance: 'Out for Repair',
   decommissioned: 'Decommissioned',
+  for_sale: 'For Sale',
+  sold: 'Sold',
+  not_verified: 'Not Verified',
 };
 
 // Activity action icons and colors
@@ -75,12 +78,12 @@ const ActivityEntry = ({ entry }: { entry: HistoryEntry }) => {
     const { before, after } = entry.data.changes || {};
     switch (action) {
       case 'device_created': {
-        const status = after?.status || 'active';
+        const status = after?.status || 'in_inventory';
         const assignedTo = after?.assignedTo || null;
         const purpose = after?.purpose || null;
         const statusLabel_ = statusLabel[status] || status;
         const parts: React.ReactNode[] = [];
-        if (statusLabel_ && statusLabel_ !== 'In Inventory') parts.push(<span key="status"><span className="font-semibold">Status:</span> {statusLabel_}</span>);
+        if (statusLabel_ && status !== 'in_inventory') parts.push(<span key="status"><span className="font-semibold">Status:</span> {statusLabel_}</span>);
         if (assignedTo) parts.push(<span key="assigned"><span className="font-semibold">Assigned to:</span> {assignedTo}</span>);
         if (purpose) parts.push(<span key="purpose"><span className="font-semibold">Purpose:</span> {purpose}</span>);
         return (

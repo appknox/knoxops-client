@@ -51,6 +51,12 @@ export function RequestDetailsModal({ isOpen, onClose, request }: RequestDetails
           <Row label="Purpose" value={request.purpose} />
           <Row label="Requesting For" value={request.requestingFor} />
           <Row label="Requested By" value={fullName(request.requestedByUser)} />
+          {request.additionalDetails && (
+            <div className="text-sm pt-1">
+              <span className="font-medium text-gray-500">Additional Details</span>
+              <p className="mt-1 text-gray-900 whitespace-pre-wrap">{request.additionalDetails}</p>
+            </div>
+          )}
         </div>
 
         {/* Status-specific details */}

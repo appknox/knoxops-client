@@ -12,7 +12,7 @@ import { PURPOSE_OPTIONS } from '@/constants/deviceOptions';
 import type { DeviceType, DeviceStatus } from '@/types';
 
 const deviceTypes = ['server', 'workstation', 'mobile', 'tablet', 'iot', 'network', 'charging_hub', 'other'] as const;
-const deviceStatuses = ['active', 'inactive', 'maintenance', 'decommissioned'] as const;
+const deviceStatuses = ['in_inventory', 'checked_out', 'maintenance', 'decommissioned', 'for_sale', 'sold', 'not_verified'] as const;
 
 const createDeviceSchema = z.object({
   name: z.string().min(1, 'Device ID is required').max(255).optional(), // Auto-generated
@@ -30,6 +30,8 @@ const createDeviceSchema = z.object({
   imei2: z.string().optional(),
   macAddress: z.string().max(17).optional(),
   simNumber: z.string().optional(),
+  adapterSerial: z.string().max(100).optional(),
+  powerCordSerial: z.string().max(100).optional(),
   purpose: z.string().optional(),
   status: z.enum(deviceStatuses),
   assignedTo: z.string().optional(),
@@ -51,8 +53,8 @@ const typeOptions = [
 ];
 
 const statusOptions = [
-  { value: 'active', label: 'In Inventory' },
-  { value: 'inactive', label: 'Checked out of inventory' },
+  { value: 'in_inventory', label: 'In Inventory' },
+  { value: 'checked_out', label: 'Checked out of inventory' },
   { value: 'maintenance', label: 'Out for repair' },
   { value: 'decommissioned', label: 'To be sold' },
 ];
@@ -65,6 +67,7 @@ const platformOptions = [
   { value: 'Windows', label: 'Windows' },
   { value: 'Linux', label: 'Linux' },
   { value: 'Cambrionix', label: 'Cambrionix' },
+  { value: 'Anker', label: 'Anker' },
 ];
 
 const cpuArchOptions = [
@@ -119,7 +122,7 @@ const RegisterDevicePage = () => {
   } = useForm<CreateDeviceFormData>({
     resolver: zodResolver(createDeviceSchema),
     defaultValues: {
-      status: 'active',
+      status: 'in_inventory',
       type: 'mobile',
     },
   });
@@ -179,6 +182,9 @@ const RegisterDevicePage = () => {
       if (data.simNumber?.trim()) metadata.simNumber = data.simNumber.trim();
       // Network fields in metadata
       if (data.macAddress?.trim()) metadata.macAddress = data.macAddress.trim();
+      // Cambrionix component serials
+      if (data.adapterSerial?.trim()) metadata.adapterSerial = data.adapterSerial.trim();
+      if (data.powerCordSerial?.trim()) metadata.powerCordSerial = data.powerCordSerial.trim();
 
       await createDevice({
         // name is auto-generated on the backend, don't send it
@@ -267,6 +273,50 @@ const RegisterDevicePage = () => {
               </div>
             </section>
 
+            {/* TECHNICAL SPECS — for all device types */}
+            <section>
+              <h2 className="text-sm font-semibold text-primary-600 uppercase tracking-wide mb-4">
+                Technical Specs
+              </h2>
+              {showTechSpecs && (
+                <div className="grid grid-cols-2 gap-4">
+                  <Select label="CPU-Arch" options={cpuArchOptions} {...register('cpuArch')} />
+                  <Select label="Platform" options={platformOptions} {...register('platform')} />
+                  <Select label="Colour" options={colourOptions} {...register('colour')} />
+                  <Input label="OS Version" {...register('osVersion')} placeholder="e.g. 17.2 / 13" />
+                  <Input label="ROM" {...register('rom')} placeholder="Auto-filled from USB" />
+                  <Input label="UDID" {...register('udid')} placeholder="Auto-filled from USB" />
+                </div>
+              )}
+              {!showTechSpecs && (
+                <div className="grid grid-cols-2 gap-4">
+                  <Select label="Platform" options={platformOptions} {...register('platform')} />
+                  <Select label="Colour" options={colourOptions} {...register('colour')} />
+                </div>
+              )}
+            </section>
+
+            {/* CAMBRIONIX COMPONENTS — if platform is Cambrionix */}
+            {watch('platform') === 'Cambrionix' && (
+              <section>
+                <h2 className="text-sm font-semibold text-primary-600 uppercase tracking-wide mb-4">
+                  Cambrionix Components
+                </h2>
+                <div className="grid grid-cols-2 gap-4">
+                  <Input
+                    label="Adapter Serial Number"
+                    {...register('adapterSerial')}
+                    placeholder="e.g. CAM-ADAPTER-12345"
+                  />
+                  <Input
+                    label="Power Cord Serial Number"
+                    {...register('powerCordSerial')}
+                    placeholder="e.g. CAM-POWER-67890"
+                  />
+                </div>
+              </section>
+            )}
+
             {/* DEVICE STATUS & ASSIGNMENT */}
             <section>
               <h2 className="text-sm font-semibold text-primary-600 uppercase tracking-wide mb-4">
@@ -290,36 +340,6 @@ const RegisterDevicePage = () => {
                 />
               </div>
             </section>
-
-            {/* TECHNICAL SPECS — only for mobile/workstation/tablet */}
-            {showTechSpecs && (
-              <section>
-                <h2 className="text-sm font-semibold text-primary-600 uppercase tracking-wide mb-4">
-                  Technical Specs
-                </h2>
-                <div className="grid grid-cols-2 gap-4">
-                  <Select label="CPU-Arch" options={cpuArchOptions} {...register('cpuArch')} />
-                  <Select label="Platform" options={platformOptions} {...register('platform')} />
-                  <Select label="Colour" options={colourOptions} {...register('colour')} />
-                  <Input label="OS Version" {...register('osVersion')} placeholder="e.g. 17.2 / 13" />
-                  <Input label="ROM" {...register('rom')} placeholder="Auto-filled from USB" />
-                  <Input label="UDID" {...register('udid')} placeholder="Auto-filled from USB" />
-                </div>
-              </section>
-            )}
-
-            {/* Platform & Colour for non-tech-spec types */}
-            {!showTechSpecs && (
-              <section>
-                <h2 className="text-sm font-semibold text-primary-600 uppercase tracking-wide mb-4">
-                  Technical Specs
-                </h2>
-                <div className="grid grid-cols-2 gap-4">
-                  <Select label="Platform" options={platformOptions} {...register('platform')} />
-                  <Select label="Colour" options={colourOptions} {...register('colour')} />
-                </div>
-              </section>
-            )}
 
             {/* NETWORK — only for mobile/tablet/workstation */}
             {showNetworkSection && (
