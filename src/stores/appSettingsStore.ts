@@ -8,7 +8,7 @@ interface AppSettingsState {
   error: string | null;
   fetchSettings: () => Promise<void>;
   updateSettings: (updates: Record<string, string>) => Promise<void>;
-  testSlackWebhook: (channel: 'onprem' | 'device') => Promise<void>;
+  testSlackWebhook: (channel: 'onprem' | 'device' | 'sale') => Promise<void>;
   clearError: () => void;
 }
 

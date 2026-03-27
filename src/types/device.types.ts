@@ -45,6 +45,10 @@ export interface Device {
   // Operational fields (direct columns)
   purpose: string | null;
   assignedTo: string | null;
+  // Device sale fields
+  condition?: string | null;
+  conditionNotes?: string | null;
+  askingPrice?: number | null;
   // Technical specs in metadata
   metadata: DeviceMetadata | null;
   registeredBy: string | null;
@@ -65,6 +69,10 @@ export interface CreateDeviceInput {
   // Operational fields (direct columns)
   purpose?: string;
   assignedTo?: string;
+  // Device sale fields
+  condition?: string;
+  conditionNotes?: string;
+  askingPrice?: number;
   // Technical specs in metadata
   metadata?: DeviceMetadata;
 }

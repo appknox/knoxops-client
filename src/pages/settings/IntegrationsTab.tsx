@@ -8,10 +8,12 @@ const IntegrationsTab = () => {
   const { settings, isLoading, isSaving, error, fetchSettings, updateSettings, testSlackWebhook, clearError } = useAppSettingsStore();
   const [slackOnpremUrl, setSlackOnpremUrl] = useState('');
   const [slackDeviceUrl, setSlackDeviceUrl] = useState('');
+  const [slackSaleUrl, setSlackSaleUrl] = useState('');
   const [showOnpremUrl, setShowOnpremUrl] = useState(false);
   const [showDeviceUrl, setShowDeviceUrl] = useState(false);
-  const [testingChannel, setTestingChannel] = useState<'onprem' | 'device' | null>(null);
-  const [testSuccess, setTestSuccess] = useState<'onprem' | 'device' | null>(null);
+  const [showSaleUrl, setShowSaleUrl] = useState(false);
+  const [testingChannel, setTestingChannel] = useState<'onprem' | 'device' | 'sale' | null>(null);
+  const [testSuccess, setTestSuccess] = useState<'onprem' | 'device' | 'sale' | null>(null);
   const [notification, setNotification] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
   useEffect(() => {
@@ -21,6 +23,7 @@ const IntegrationsTab = () => {
   useEffect(() => {
     setSlackOnpremUrl(settings[SETTING_KEYS.SLACK_ONPREM_WEBHOOK_URL] || '');
     setSlackDeviceUrl(settings[SETTING_KEYS.SLACK_DEVICE_WEBHOOK_URL] || '');
+    setSlackSaleUrl(settings[SETTING_KEYS.SLACK_SALE_WEBHOOK_URL] || '');
   }, [settings]);
 
   const handleSave = async () => {
@@ -30,6 +33,7 @@ const IntegrationsTab = () => {
       await updateSettings({
         [SETTING_KEYS.SLACK_ONPREM_WEBHOOK_URL]: slackOnpremUrl,
         [SETTING_KEYS.SLACK_DEVICE_WEBHOOK_URL]: slackDeviceUrl,
+        [SETTING_KEYS.SLACK_SALE_WEBHOOK_URL]: slackSaleUrl,
       });
       setNotification({ type: 'success', message: 'Webhook URLs updated successfully' });
       setTestSuccess(null);
@@ -38,7 +42,7 @@ const IntegrationsTab = () => {
     }
   };
 
-  const handleTestWebhook = async (channel: 'onprem' | 'device') => {
+  const handleTestWebhook = async (channel: 'onprem' | 'device' | 'sale') => {
     clearError();
     setNotification(null);
     setTestingChannel(channel);
@@ -155,12 +159,46 @@ const IntegrationsTab = () => {
                 Test Webhook
               </Button>
             </div>
+
+            {/* Sale Announcements Webhook */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Sale Announcements Webhook URL
+              </label>
+              <div className="relative">
+                <Input
+                  type={showSaleUrl ? 'text' : 'password'}
+                  value={slackSaleUrl}
+                  onChange={(e) => setSlackSaleUrl(e.target.value)}
+                  placeholder="https://hooks.slack.com/services/YOUR/SALE/WEBHOOK"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowSaleUrl((v) => !v)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                  tabIndex={-1}
+                >
+                  {showSaleUrl ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </button>
+              </div>
+              <p className="text-xs text-gray-500 mt-1">Used for device sale announcements</p>
+              <Button
+                size="sm"
+                variant="outline"
+                className="mt-2"
+                onClick={() => handleTestWebhook('sale')}
+                disabled={testingChannel === 'sale' || !slackSaleUrl}
+                isLoading={testingChannel === 'sale'}
+              >
+                Test Webhook
+              </Button>
+            </div>
           </div>
         </div>
 
         {/* Save Button */}
         <div className="flex justify-end gap-3 pt-6 border-t border-gray-200">
-          <Button type="button" variant="outline" onClick={() => { setSlackOnpremUrl(settings[SETTING_KEYS.SLACK_ONPREM_WEBHOOK_URL] || ''); setSlackDeviceUrl(settings[SETTING_KEYS.SLACK_DEVICE_WEBHOOK_URL] || ''); }}>
+          <Button type="button" variant="outline" onClick={() => { setSlackOnpremUrl(settings[SETTING_KEYS.SLACK_ONPREM_WEBHOOK_URL] || ''); setSlackDeviceUrl(settings[SETTING_KEYS.SLACK_DEVICE_WEBHOOK_URL] || ''); setSlackSaleUrl(settings[SETTING_KEYS.SLACK_SALE_WEBHOOK_URL] || ''); }}>
             Cancel
           </Button>
           <Button type="button" onClick={handleSave} isLoading={isSaving}>

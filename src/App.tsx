@@ -8,6 +8,7 @@ import { SettingsPage, InvitesTab, IntegrationsTab, NotificationsSettingsTab } f
 import { OnpremPage, OnpremClientsTab, NotificationsTab, ReleasesTab, RegisterOnpremPage, OnpremDetailPage } from '@/pages/onprem';
 import { AllLicenseRequestsTab } from '@/components/onprem';
 import { ProfilePage } from '@/pages/profile';
+import { SalePage } from '@/pages/sale/SalePage';
 
 function App() {
   return (
@@ -18,6 +19,7 @@ function App() {
         <Route path="/accept-invite/:token" element={<AcceptInvitePage />} />
         <Route path="/auth/callback" element={<AuthCallback />} />
         <Route path="/auth/error" element={<AuthError />} />
+        <Route path="/sale" element={<SalePage />} />
 
         {/* Protected routes */}
         <Route element={<AppLayout />}>

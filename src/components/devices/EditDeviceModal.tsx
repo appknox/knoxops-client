@@ -10,6 +10,12 @@ import { PURPOSE_OPTIONS } from '@/constants/deviceOptions';
 import { FetchDeviceWizard } from './FetchDeviceWizard';
 import type { Device, DeviceType, DeviceStatus } from '@/types';
 
+const conditionOptions = [
+  { value: 'Excellent', label: 'Excellent' },
+  { value: 'Good', label: 'Good' },
+  { value: 'Fair', label: 'Fair' },
+];
+
 const updateDeviceSchema = z.object({
   name: z.string().min(1, 'Device name is required').max(255),
   serialNumber: z.string().max(100).optional(),
@@ -33,6 +39,19 @@ const updateDeviceSchema = z.object({
   purpose: z.string().optional(),
   assignedTo: z.string().optional(),
   description: z.string().optional(),
+  condition: z.string().optional(),
+  conditionNotes: z.string().optional(),
+  askingPrice: z.coerce.number().positive().optional().or(z.literal('')),
+}).refine((data) => {
+  // condition and askingPrice are required when status = for_sale
+  if (data.status === 'for_sale') {
+    if (!data.condition) return false;
+    if (data.askingPrice === '' || data.askingPrice === undefined) return false;
+  }
+  return true;
+}, {
+  message: 'Condition and Asking Price are required for For Sale devices',
+  path: ['condition'],
 });
 
 type UpdateDeviceFormData = z.infer<typeof updateDeviceSchema>;
@@ -163,6 +182,10 @@ const EditDeviceModal = ({ isOpen, onClose, device, readOnly = false }: EditDevi
           purpose: normalizeValue(device.purpose || '', purposeOptions),
           assignedTo: device.assignedTo || '',
           description: device.description || '',
+          // Device sale fields
+          condition: device.condition || '',
+          conditionNotes: device.conditionNotes || '',
+          askingPrice: device.askingPrice ? device.askingPrice.toString() : '',
         }
       : undefined,
   });
@@ -239,6 +262,10 @@ const EditDeviceModal = ({ isOpen, onClose, device, readOnly = false }: EditDevi
         purpose: data.purpose?.trim() || undefined,
         assignedTo: data.assignedTo?.trim() || undefined,
         description: data.description?.trim() || undefined,
+        // Device sale fields
+        condition: data.condition?.trim() || undefined,
+        conditionNotes: data.conditionNotes?.trim() || undefined,
+        askingPrice: data.askingPrice && data.askingPrice !== '' ? Number(data.askingPrice) : undefined,
         // Technical specs + network in metadata
         ...(Object.keys(metadata).length > 0 ? { metadata } : {}),
       });
@@ -345,8 +372,39 @@ const EditDeviceModal = ({ isOpen, onClose, device, readOnly = false }: EditDevi
 
           <div className="grid grid-cols-2 gap-4">
             <Select label="Purpose / Status" options={purposeOptions} {...register('purpose')} disabled={readOnly} />
-            <Select label="Inventory Status" options={statusOptions} {...register('status')} disabled={readOnly} />
+            <Select label="Inventory Status" options={statusOptions} {...register('status')} disabled={readOnly} error={errors.status?.message} />
           </div>
+
+          {/* Device Sale Fields — only when status = for_sale */}
+          {selectedStatus === 'for_sale' && (
+            <div className="space-y-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+              <h3 className="text-sm font-semibold text-blue-900">Sale Information</h3>
+              <div className="grid grid-cols-2 gap-4">
+                <Select
+                  label="Condition *"
+                  options={conditionOptions}
+                  {...register('condition')}
+                  disabled={readOnly}
+                  error={errors.condition?.message}
+                />
+                <Input
+                  label="Asking Price (₹) *"
+                  type="number"
+                  step="0.01"
+                  {...register('askingPrice')}
+                  disabled={readOnly}
+                  error={errors.askingPrice?.message}
+                />
+              </div>
+              <Textarea
+                label="Condition Notes"
+                {...register('conditionNotes')}
+                placeholder="e.g. Minor scratches on back, battery health 85%..."
+                rows={2}
+                disabled={readOnly}
+              />
+            </div>
+          )}
 
           {/* NETWORK — only for mobile/tablet/workstation */}
           {showNetworkSection && (

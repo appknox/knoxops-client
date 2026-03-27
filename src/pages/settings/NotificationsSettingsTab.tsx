@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react';
 import { Button, Input, Select, Card, CardBody } from '@/components/ui';
 import { useAppSettingsStore } from '@/stores/appSettingsStore';
-import { Check, AlertCircle, Loader2 } from 'lucide-react';
+import { Check, AlertCircle, Loader2, Send } from 'lucide-react';
 import { SETTING_KEYS } from '@/constants/settingKeys';
+import { devicesApi } from '@/api';
+import apiClient from '@/api/client';
 
 const NotificationsSettingsTab = () => {
   const { settings, isLoading, isSaving, error, fetchSettings, updateSettings, clearError } = useAppSettingsStore();
@@ -12,11 +14,20 @@ const NotificationsSettingsTab = () => {
   const [patchRemindersEnabled, setPatchRemindersEnabled] = useState(true);
   const [deviceCheckinEnabled, setDeviceCheckinEnabled] = useState(true);
   const [deviceCheckoutEnabled, setDeviceCheckoutEnabled] = useState(true);
+  const [deviceSaleEnabled, setDeviceSaleEnabled] = useState(false);
   const [notification, setNotification] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+  const [sendingSaleNotification, setSendingSaleNotification] = useState(false);
+  const [forSaleCount, setForSaleCount] = useState<number | null>(null);
 
   useEffect(() => {
     fetchSettings();
   }, [fetchSettings]);
+
+  useEffect(() => {
+    devicesApi.list({ status: 'for_sale', limit: 1 }).then((res) => {
+      setForSaleCount(res.pagination.total);
+    }).catch(() => setForSaleCount(0));
+  }, []);
 
   useEffect(() => {
     setPatchDaysAhead(settings[SETTING_KEYS.PATCH_REMINDER_DAYS_AHEAD] || '10');
@@ -25,6 +36,7 @@ const NotificationsSettingsTab = () => {
     setPatchRemindersEnabled(settings[SETTING_KEYS.PATCH_REMINDERS_ENABLED] !== 'false');
     setDeviceCheckinEnabled(settings[SETTING_KEYS.DEVICE_CHECKIN_DIGEST_ENABLED] !== 'false');
     setDeviceCheckoutEnabled(settings[SETTING_KEYS.DEVICE_CHECKOUT_DIGEST_ENABLED] !== 'false');
+    setDeviceSaleEnabled(settings[SETTING_KEYS.DEVICE_SALE_ENABLED] !== 'false');
   }, [settings]);
 
   const handleSave = async () => {
@@ -38,10 +50,30 @@ const NotificationsSettingsTab = () => {
         [SETTING_KEYS.PATCH_REMINDERS_ENABLED]: String(patchRemindersEnabled),
         [SETTING_KEYS.DEVICE_CHECKIN_DIGEST_ENABLED]: String(deviceCheckinEnabled),
         [SETTING_KEYS.DEVICE_CHECKOUT_DIGEST_ENABLED]: String(deviceCheckoutEnabled),
+        [SETTING_KEYS.DEVICE_SALE_ENABLED]: String(deviceSaleEnabled),
       });
       setNotification({ type: 'success', message: 'Notification settings updated successfully' });
     } catch (err: any) {
       setNotification({ type: 'error', message: error || 'Failed to update settings' });
+    }
+  };
+
+  const handleSendSaleNotification = async () => {
+    setSendingSaleNotification(true);
+    setNotification(null);
+    try {
+      const { data } = await apiClient.post('/notifications/sale/trigger');
+      setNotification({
+        type: 'success',
+        message: `Sale announcement sent! (${data.deviceCount} device${data.deviceCount !== 1 ? 's' : ''})`,
+      });
+    } catch (err: any) {
+      setNotification({
+        type: 'error',
+        message: err.message || 'Failed to send sale notification',
+      });
+    } finally {
+      setSendingSaleNotification(false);
     }
   };
 
@@ -147,7 +179,7 @@ const NotificationsSettingsTab = () => {
         </div>
 
         {/* Device Digests Section */}
-        <div className="mb-8">
+        <div className="mb-8 pb-8 border-b border-gray-200">
           <h3 className="text-base font-semibold text-gray-900 mb-4">Device Digests</h3>
           <div className="space-y-3">
             <div className="flex items-center gap-3">
@@ -178,6 +210,69 @@ const NotificationsSettingsTab = () => {
           </div>
         </div>
 
+        {/* Device Sale Section */}
+        <div className="mb-8">
+          <h3 className="text-base font-semibold text-gray-900 mb-4">Device Sale Program</h3>
+          <div className="space-y-4">
+            <div className="flex items-center gap-3 flex-wrap">
+              <input
+                type="checkbox"
+                id="device-sale-enabled"
+                checked={deviceSaleEnabled}
+                disabled={forSaleCount !== null && forSaleCount === 0}
+                onChange={(e) => setDeviceSaleEnabled(e.target.checked)}
+                className="h-4 w-4 text-primary-600 rounded disabled:opacity-40 disabled:cursor-not-allowed"
+              />
+              <label
+                htmlFor="device-sale-enabled"
+                className={`text-sm font-medium ${forSaleCount !== null && forSaleCount === 0 ? 'text-gray-400' : 'text-gray-700'}`}
+              >
+                Enable device sale program
+              </label>
+              <span className="text-sm text-gray-500">
+                —&nbsp;Devices available for sale:{' '}
+                {forSaleCount === null ? (
+                  <Loader2 className="inline h-3 w-3 animate-spin" />
+                ) : (
+                  <span className={`font-semibold ${forSaleCount === 0 ? 'text-gray-400' : 'text-green-600'}`}>
+                    {forSaleCount}
+                  </span>
+                )}
+              </span>
+              {deviceSaleEnabled && (
+                <span
+                  title={
+                    !settings[SETTING_KEYS.SLACK_SALE_WEBHOOK_URL]
+                      ? 'Please configure Slack webhook for sale notifications in Settings → Integrations'
+                      : undefined
+                  }
+                >
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={handleSendSaleNotification}
+                    disabled={sendingSaleNotification || !settings[SETTING_KEYS.SLACK_SALE_WEBHOOK_URL]}
+                    className="flex items-center gap-2"
+                    isLoading={sendingSaleNotification}
+                  >
+                    <Send className="h-4 w-4" />
+                    Send Sale Announcement
+                  </Button>
+                </span>
+              )}
+            </div>
+            {forSaleCount !== null && forSaleCount === 0 && (
+              <p className="text-xs text-gray-400 ml-7">Mark at least one device as "For Sale" to enable this program.</p>
+            )}
+            {deviceSaleEnabled && !settings[SETTING_KEYS.SLACK_SALE_WEBHOOK_URL] && (
+              <p className="text-xs text-gray-500 ml-7">
+                ℹ️ Configure Slack webhook URL in <strong>Settings → Notifications</strong> to enable sale announcements
+              </p>
+            )}
+          </div>
+        </div>
+
         {/* Save Button */}
         <div className="flex justify-end gap-3 pt-6 border-t border-gray-200">
           <Button
@@ -190,6 +285,7 @@ const NotificationsSettingsTab = () => {
               setPatchRemindersEnabled(settings[SETTING_KEYS.PATCH_REMINDERS_ENABLED] !== 'false');
               setDeviceCheckinEnabled(settings[SETTING_KEYS.DEVICE_CHECKIN_DIGEST_ENABLED] !== 'false');
               setDeviceCheckoutEnabled(settings[SETTING_KEYS.DEVICE_CHECKOUT_DIGEST_ENABLED] !== 'false');
+              setDeviceSaleEnabled(settings[SETTING_KEYS.DEVICE_SALE_ENABLED] !== 'false');
             }}
           >
             Cancel
