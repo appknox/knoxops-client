@@ -1,6 +1,12 @@
 name: Manual Publish docker image to ghcr
 
-on: workflow_dispatch
+on:
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: 'Branch to build from'
+        required: false
+        default: 'main'
 
 env:
   GHCR_CONTAINER: ghcr.io/${{ github.repository }}
@@ -16,9 +22,11 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.branch }}
 
       - name: Get docker tag
-        run: echo "::set-output name=docker_tag::${GITHUB_REF##*/}_${{github.sha}}"
+        run: echo "::set-output name=docker_tag::knoxops-client-${{github.sha}}"
         id: docker_tag
 
       - name: Docker Login to ghcr
