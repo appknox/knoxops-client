@@ -14,6 +14,8 @@
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.2",
+    "@yume-chan/adb": "^2.5.1",
+    "@yume-chan/adb-daemon-webusb": "^2.3.2",
     "axios": "^1.13.5",
     "clsx": "^2.1.1",
     "date-fns": "^4.1.0",
