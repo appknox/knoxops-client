@@ -1,21 +1,32 @@
 import { useEffect, useState } from 'react';
-import { AlertCircle, Smartphone, Loader2, Check, X } from 'lucide-react';
+import { AlertCircle, Smartphone, Loader2, Check, X, Usb } from 'lucide-react';
 import { Modal } from '@/components/ui/Modal';
 import { Button } from '@/components/ui/Button';
-import { deviceUsbApi, type UsbDetectResult, type UsbDeviceInfo } from '@/api/deviceUsb';
+import type { UsbDetectResult, UsbDeviceInfo } from '@/api/deviceUsb';
 import { devicesApi } from '@/api/devices';
+import { detectAndroidViaWebUsb, isWebUsbSupported } from '@/lib/webusb-adb';
+import { iosAgent, isAgentRunning } from '@/lib/ios-agent';
 
 interface FetchDeviceWizardProps {
   isOpen: boolean;
   onClose: () => void;
   onFetched: (info: UsbDeviceInfo) => void;
-  currentDeviceId?: string; // Device ID being edited
-  currentSerialNumber?: string; // Serial number of device being edited
-  expectedPlatform?: string; // If set, enforce platform match (e.g. "iOS" or "Android")
+  currentDeviceId?: string;
+  currentSerialNumber?: string;
+  expectedPlatform?: string;
 }
 
-export const FetchDeviceWizard = ({ isOpen, onClose, onFetched, currentDeviceId, currentSerialNumber, expectedPlatform }: FetchDeviceWizardProps) => {
-  const [step, setStep] = useState<1 | 2 | 3>(1);
+type Step = 1 | 2 | 3;
+
+export const FetchDeviceWizard = ({
+  isOpen,
+  onClose,
+  onFetched,
+  currentDeviceId: _currentDeviceId,
+  currentSerialNumber,
+  expectedPlatform,
+}: FetchDeviceWizardProps) => {
+  const [step, setStep] = useState<Step>(1);
   const [platform, setPlatform] = useState<'ios' | 'android' | null>(null);
   const [detectedDevice, setDetectedDevice] = useState<UsbDetectResult | null>(null);
   const [deviceInfo, setDeviceInfo] = useState<UsbDeviceInfo | null>(null);
@@ -26,7 +37,15 @@ export const FetchDeviceWizard = ({ isOpen, onClose, onFetched, currentDeviceId,
     deviceName: string | null;
   } | null>(null);
 
-  // Reset state when wizard opens
+  const webUsbSupported = isWebUsbSupported();
+  const [agentAvailable, setAgentAvailable] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    if (isOpen) {
+      isAgentRunning().then(setAgentAvailable);
+    }
+  }, [isOpen]);
+
   useEffect(() => {
     if (isOpen) {
       setStep(1);
@@ -39,30 +58,67 @@ export const FetchDeviceWizard = ({ isOpen, onClose, onFetched, currentDeviceId,
     }
   }, [isOpen]);
 
-  const handleDetect = async () => {
+  // ── Android via WebUSB ────────────────────────────────────────────────────
+
+  const handleDetectAndroid = async () => {
     setIsLoading(true);
     setError(null);
     try {
-      const result = await deviceUsbApi.detect();
-      if (result) {
-        // Check platform mismatch against the device being edited
-        if (expectedPlatform) {
-          const detected = result.platform.toLowerCase();
-          const expected = expectedPlatform.toLowerCase();
-          if (detected !== expected) {
-            const detectedLabel = detected === 'ios' ? 'iPhone (iOS)' : 'Android';
-            const expectedLabel = expected === 'ios' ? 'iPhone (iOS)' : 'Android';
-            setError(
-              `Platform mismatch: this device is registered as ${expectedLabel} but you connected a ${detectedLabel} device. Please connect the correct device.`
-            );
-            return;
+      if (expectedPlatform && expectedPlatform.toLowerCase() !== 'android') {
+        setError(`Platform mismatch: this device is registered as ${expectedPlatform} but you selected Android.`);
+        return;
+      }
+
+      const info = await detectAndroidViaWebUsb();
+
+      const deviceInfoNorm: UsbDeviceInfo = { ...info };
+      setDeviceInfo(deviceInfoNorm);
+
+      if (info.serialNumber) {
+        const isSameSerial = info.serialNumber === currentSerialNumber;
+        if (!isSameSerial) {
+          const check = await devicesApi.checkSerial(info.serialNumber);
+          if (check.exists) {
+            setSerialConflict({ deviceId: check.deviceId!, deviceName: check.deviceName });
           }
         }
-        setDetectedDevice(result);
-        setPlatform(result.platform);
+      }
+
+      setStep(3);
+    } catch (err: any) {
+      setError(err.message || 'Failed to detect Android device via WebUSB.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // ── iOS via local agent ───────────────────────────────────────────────────
+
+  const handleDetectIos = async () => {
+    setIsLoading(true);
+    setError(null);
+    try {
+      if (expectedPlatform && expectedPlatform.toLowerCase() !== 'ios') {
+        setError(`Platform mismatch: this device is registered as ${expectedPlatform} but you selected iPhone.`);
+        return;
+      }
+
+      const running = await isAgentRunning();
+      setAgentAvailable(running);
+      if (!running) {
+        setError(
+          'KnoxOps Agent is not running on this machine.\n\nStart it with:\n  cd agent && npm install && npm start'
+        );
+        return;
+      }
+
+      const { device } = await iosAgent.detect();
+      if (device) {
+        setDetectedDevice(device as UsbDetectResult);
+        setPlatform('ios');
         setStep(2);
       } else {
-        setError('No device detected. For iPhone: keep screen unlocked. For Android: ensure USB Debugging is enabled in Developer Options.');
+        setError('No iOS device detected. Keep screen unlocked and use an original Apple cable.');
       }
     } catch (err: any) {
       setError(err.message || 'Failed to detect device.');
@@ -71,12 +127,12 @@ export const FetchDeviceWizard = ({ isOpen, onClose, onFetched, currentDeviceId,
     }
   };
 
-  const handlePair = async () => {
-    if (!platform || !detectedDevice) return;
+  const handlePairIos = async () => {
+    if (!detectedDevice) return;
     setIsLoading(true);
     setError(null);
     try {
-      await deviceUsbApi.pair(platform, detectedDevice.id);
+      await iosAgent.pair(detectedDevice.id);
       setStep(3);
     } catch (err: any) {
       setError(err.message || 'Failed to authorize device.');
@@ -85,15 +141,14 @@ export const FetchDeviceWizard = ({ isOpen, onClose, onFetched, currentDeviceId,
     }
   };
 
-  const handleFetchInfo = async () => {
-    if (!platform || !detectedDevice) return;
+  const handleFetchIosInfo = async () => {
+    if (!detectedDevice) return;
     setIsLoading(true);
     setError(null);
     try {
-      const info = await deviceUsbApi.fetchInfo(platform, detectedDevice.id);
-      setDeviceInfo(info);
+      const info = await iosAgent.fetch(detectedDevice.id);
+      setDeviceInfo(info as UsbDeviceInfo);
 
-      // Check for serial conflict (skip only if same device with same serial)
       if (info.serialNumber) {
         const isSameSerial = info.serialNumber === currentSerialNumber;
         if (!isSameSerial) {
@@ -110,6 +165,12 @@ export const FetchDeviceWizard = ({ isOpen, onClose, onFetched, currentDeviceId,
     }
   };
 
+  useEffect(() => {
+    if (step === 3 && platform === 'ios' && !deviceInfo && !isLoading) {
+      handleFetchIosInfo();
+    }
+  }, [step]);
+
   const handleUseInfo = () => {
     if (deviceInfo) {
       onFetched(deviceInfo);
@@ -120,16 +181,11 @@ export const FetchDeviceWizard = ({ isOpen, onClose, onFetched, currentDeviceId,
   const handleBack = () => {
     if (step > 1) {
       setError(null);
-      setStep((s) => (s - 1) as 1 | 2 | 3);
+      setStep((s) => (s - 1) as Step);
     }
   };
 
-  // Fetch info on Step 3 entry
-  useEffect(() => {
-    if (step === 3 && !deviceInfo && !isLoading) {
-      handleFetchInfo();
-    }
-  }, [step]);
+  const stepLabel = step === 1 ? 'Select Platform' : step === 2 ? 'Authorize Device' : 'Device Info';
 
   return (
     <Modal isOpen={isOpen} onClose={onClose} size="md">
@@ -137,7 +193,7 @@ export const FetchDeviceWizard = ({ isOpen, onClose, onFetched, currentDeviceId,
         {/* Header */}
         <div className="mb-6 flex items-center justify-between">
           <h2 className="text-lg font-semibold text-gray-900">
-            Step {step} of 3 · {step === 1 ? 'Connect Device' : step === 2 ? 'Authorize Device' : 'Device Info'}
+            Step {step} of 3 · {stepLabel}
           </h2>
           <button
             type="button"
@@ -149,63 +205,124 @@ export const FetchDeviceWizard = ({ isOpen, onClose, onFetched, currentDeviceId,
           </button>
         </div>
 
-        {/* Step 1: Connect */}
+        {/* ── Step 1: Platform selection ── */}
         {step === 1 && (
           <div className="space-y-4">
-            <div className="py-6">
-              <div className="flex justify-center mb-4">
-                <Smartphone className="h-12 w-12 text-gray-400" />
+            <p className="text-sm text-gray-600 mb-4">
+              Connect your device via USB cable and select the platform below.
+            </p>
+
+            {/* Android — WebUSB */}
+            <div className="border border-gray-200 rounded-lg p-4 space-y-3">
+              <div className="flex items-center gap-2 mb-1">
+                <span className="text-lg">🤖</span>
+                <span className="font-medium text-gray-900">Android</span>
+                {webUsbSupported && (
+                  <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full">
+                    WebUSB
+                  </span>
+                )}
               </div>
-              <p className="text-gray-700 font-medium text-center mb-5">Connect your device via USB cable</p>
-              <div className="space-y-4">
+              {webUsbSupported ? (
+                <div className="bg-green-50 border border-green-200 rounded-lg p-3">
+                  <ul className="text-sm text-green-800 space-y-1">
+                    <li>• Enable <strong>USB Debugging</strong> in Developer Options</li>
+                    <li>• Connect cable and tap <strong>Allow</strong> when prompted</li>
+                    <li>• Chrome/Edge will show a device picker</li>
+                  </ul>
+                </div>
+              ) : (
+                <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
+                  <p className="text-sm text-amber-800">
+                    WebUSB requires Chrome or Edge browser over HTTPS or localhost.
+                  </p>
+                </div>
+              )}
+              <Button
+                type="button"
+                onClick={handleDetectAndroid}
+                isLoading={isLoading}
+                disabled={!webUsbSupported}
+                className="w-full flex items-center justify-center gap-2"
+              >
+                <Usb className="h-4 w-4" />
+                Connect Android via WebUSB
+              </Button>
+            </div>
+
+            {/* iOS — local agent */}
+            <div className="border border-gray-200 rounded-lg p-4 space-y-3">
+              <div className="flex items-center gap-2 mb-1">
+                <span className="text-lg">🍎</span>
+                <span className="font-medium text-gray-900">iPhone (iOS)</span>
+                {agentAvailable === true && (
+                  <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full">Agent running</span>
+                )}
+                {agentAvailable === false && (
+                  <span className="text-xs bg-red-100 text-red-700 px-2 py-0.5 rounded-full">Agent offline</span>
+                )}
+              </div>
+              {agentAvailable === false ? (
+                <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 space-y-1">
+                  <p className="text-xs font-semibold text-amber-700">KnoxOps Agent required</p>
+                  <p className="text-xs text-amber-800">Run on this machine:</p>
+                  <code className="block text-xs bg-amber-100 rounded px-2 py-1 font-mono">
+                    brew install libimobiledevice
+                  </code>
+                  <code className="block text-xs bg-amber-100 rounded px-2 py-1 font-mono">
+                    cd agent && npm install && npm start
+                  </code>
+                </div>
+              ) : (
                 <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
-                  <p className="text-xs font-semibold text-blue-700 uppercase mb-1">iPhone</p>
                   <ul className="text-sm text-blue-800 space-y-1">
                     <li>• Keep screen on and unlocked</li>
-                    <li>• Use original Apple cable</li>
+                    <li>• Use an original Apple cable</li>
                   </ul>
                 </div>
-                <div className="bg-green-50 border border-green-200 rounded-lg p-3">
-                  <p className="text-xs font-semibold text-green-700 uppercase mb-1">Android</p>
-                  <ul className="text-sm text-green-800 space-y-1">
-                    <li>• Go to <strong>Settings → About Phone</strong></li>
-                    <li>• Tap <strong>Build Number</strong> 7 times to unlock Developer Options</li>
-                    <li>• Go to <strong>Settings → Developer Options</strong></li>
-                    <li>• Enable <strong>USB Debugging</strong></li>
-                    <li>• Connect cable and tap <strong>Allow</strong> when prompted</li>
-                  </ul>
-                </div>
-              </div>
+              )}
+              <Button
+                type="button"
+                variant="outline"
+                onClick={handleDetectIos}
+                isLoading={isLoading}
+                className="w-full"
+              >
+                Connect iPhone
+              </Button>
             </div>
+
             {error && (
               <div className="p-3 bg-red-50 border border-red-200 rounded-lg flex gap-2">
                 <AlertCircle className="h-5 w-5 text-red-600 flex-shrink-0 mt-0.5" />
-                <p className="text-sm text-red-700">{error}</p>
+                <div className="text-sm text-red-700 space-y-1">
+                  {error.split('\n').map((line, i) =>
+                    line.startsWith('  ') ? (
+                      <code key={i} className="block bg-red-100 rounded px-2 py-0.5 font-mono text-xs">
+                        {line.trim()}
+                      </code>
+                    ) : (
+                      <p key={i}>{line}</p>
+                    )
+                  )}
+                </div>
               </div>
             )}
-            <div className="flex justify-between gap-3 pt-4">
-              <Button type="button" variant="outline" onClick={onClose}>
-                Cancel
-              </Button>
-              <Button type="button" onClick={handleDetect} isLoading={isLoading}>
-                Check Connection →
-              </Button>
-            </div>
           </div>
         )}
 
-        {/* Step 2: Authorize (iOS) */}
+        {/* ── Step 2: iOS authorize ── */}
         {step === 2 && platform === 'ios' && (
           <div className="space-y-4">
             <div className="py-6 text-center">
               <div className="text-2xl mb-4">🔒</div>
               <p className="font-medium text-gray-900 mb-2">
-                Device detected: iPhone {detectedDevice?.name ? `(${detectedDevice.name})` : ''}
+                iPhone detected {detectedDevice?.name ? `(${detectedDevice.name})` : ''}
               </p>
               <p className="text-sm text-gray-600 mt-4 mb-4">
                 A "Trust This Computer?" prompt will appear on your iPhone.
               </p>
-              <ol className="text-sm text-gray-600 space-y-2">
+              <ol className="text-sm text-gray-600 space-y-2 text-left max-w-xs mx-auto">
                 <li>1. Unlock your iPhone</li>
                 <li>2. Tap "Trust" when prompted</li>
                 <li>3. Enter your passcode if asked</li>
@@ -221,47 +338,14 @@ export const FetchDeviceWizard = ({ isOpen, onClose, onFetched, currentDeviceId,
               <Button type="button" variant="outline" onClick={handleBack} disabled={isLoading}>
                 ← Back
               </Button>
-              <Button type="button" onClick={handlePair} isLoading={isLoading}>
+              <Button type="button" onClick={handlePairIos} isLoading={isLoading}>
                 I've Tapped Trust →
               </Button>
             </div>
           </div>
         )}
 
-        {/* Step 2: Authorize (Android) */}
-        {step === 2 && platform === 'android' && (
-          <div className="space-y-4">
-            <div className="py-6 text-center">
-              <div className="text-2xl mb-4">🤖</div>
-              <p className="font-medium text-gray-900 mb-2">
-                Device detected: Android {detectedDevice?.name ? `(${detectedDevice.name})` : ''}
-              </p>
-              <p className="text-sm text-gray-600 mt-4 mb-4">
-                An "Allow USB Debugging?" popup may appear on your Android device.
-              </p>
-              <ol className="text-sm text-gray-600 space-y-2">
-                <li>1. Unlock your device</li>
-                <li>2. Tap "Allow" when prompted</li>
-              </ol>
-            </div>
-            {error && (
-              <div className="p-3 bg-red-50 border border-red-200 rounded-lg flex gap-2">
-                <AlertCircle className="h-5 w-5 text-red-600 flex-shrink-0 mt-0.5" />
-                <p className="text-sm text-red-700">{error}</p>
-              </div>
-            )}
-            <div className="flex justify-between gap-3 pt-4">
-              <Button type="button" variant="outline" onClick={handleBack} disabled={isLoading}>
-                ← Back
-              </Button>
-              <Button type="button" onClick={handlePair} isLoading={isLoading}>
-                Verify & Continue →
-              </Button>
-            </div>
-          </div>
-        )}
-
-        {/* Step 3: Fetch Info */}
+        {/* ── Step 3: Device info ── */}
         {step === 3 && (
           <div className="space-y-4">
             {isLoading ? (
@@ -279,9 +363,11 @@ export const FetchDeviceWizard = ({ isOpen, onClose, onFetched, currentDeviceId,
                   <Button type="button" variant="outline" onClick={handleBack}>
                     ← Back
                   </Button>
-                  <Button type="button" onClick={handleFetchInfo}>
-                    Retry
-                  </Button>
+                  {platform === 'ios' && (
+                    <Button type="button" onClick={handleFetchIosInfo}>
+                      Retry
+                    </Button>
+                  )}
                 </div>
               </div>
             ) : deviceInfo ? (
@@ -302,86 +388,28 @@ export const FetchDeviceWizard = ({ isOpen, onClose, onFetched, currentDeviceId,
                   </div>
                 )}
                 <div className="space-y-3 bg-gray-50 rounded-lg p-4">
-                  {deviceInfo.name && (
-                    <div className="flex justify-between text-sm">
-                      <span className="text-gray-600">Name:</span>
-                      <span className="font-medium text-gray-900">{deviceInfo.name}</span>
-                    </div>
-                  )}
-                  {deviceInfo.model && (
-                    <div className="flex justify-between text-sm">
-                      <span className="text-gray-600">Model:</span>
-                      <span className="font-medium text-gray-900">{deviceInfo.model}</span>
-                    </div>
-                  )}
-                  {deviceInfo.osVersion && (
-                    <div className="flex justify-between text-sm">
-                      <span className="text-gray-600">OS Version:</span>
-                      <span className="font-medium text-gray-900">{deviceInfo.osVersion}</span>
-                    </div>
-                  )}
-                  {deviceInfo.serialNumber && (
-                    <div className="flex justify-between text-sm">
-                      <span className="text-gray-600">Serial:</span>
-                      <span className="font-medium text-gray-900 truncate">{deviceInfo.serialNumber}</span>
-                    </div>
-                  )}
-                  {deviceInfo.udid && (
-                    <div className="flex justify-between text-sm">
-                      <span className="text-gray-600">UDID:</span>
-                      <span className="font-medium text-gray-900 truncate max-w-[200px]">{deviceInfo.udid}</span>
-                    </div>
-                  )}
-                  {deviceInfo.modelNumber && (
-                    <div className="flex justify-between text-sm">
-                      <span className="text-gray-600">Model No.:</span>
-                      <span className="font-medium text-gray-900">{deviceInfo.modelNumber}</span>
-                    </div>
-                  )}
-                  {deviceInfo.cpuArch && (
-                    <div className="flex justify-between text-sm">
-                      <span className="text-gray-600">CPU Arch:</span>
-                      <span className="font-medium text-gray-900">{deviceInfo.cpuArch}</span>
-                    </div>
-                  )}
-                  <div className="flex justify-between text-sm">
-                    <span className="text-gray-600">ROM:</span>
-                    <span className="font-medium text-gray-900">{deviceInfo.rom || '(not available)'}</span>
-                  </div>
-                  <div className="flex justify-between text-sm">
-                    <span className="text-gray-600">Platform:</span>
-                    <span className="font-medium text-gray-900">{deviceInfo.platform}</span>
-                  </div>
-                  {deviceInfo.colour && (
-                    <div className="flex justify-between text-sm">
-                      <span className="text-gray-600">Colour:</span>
-                      <span className="font-medium text-gray-900">{deviceInfo.colour}</span>
-                    </div>
-                  )}
-                  {deviceInfo.imei && (
-                    <div className="flex justify-between text-sm">
-                      <span className="text-gray-600">IMEI 1:</span>
-                      <span className="font-medium text-gray-900 truncate">{deviceInfo.imei}</span>
-                    </div>
-                  )}
-                  {deviceInfo.imei2 && (
-                    <div className="flex justify-between text-sm">
-                      <span className="text-gray-600">IMEI 2:</span>
-                      <span className="font-medium text-gray-900 truncate">{deviceInfo.imei2}</span>
-                    </div>
-                  )}
-                  {deviceInfo.macAddress && (
-                    <div className="flex justify-between text-sm">
-                      <span className="text-gray-600">MAC Address:</span>
-                      <span className="font-medium text-gray-900 truncate">{deviceInfo.macAddress}</span>
-                    </div>
-                  )}
-                  {deviceInfo.simNumber && (
-                    <div className="flex justify-between text-sm">
-                      <span className="text-gray-600">SIM (ICCID):</span>
-                      <span className="font-medium text-gray-900 truncate">{deviceInfo.simNumber}</span>
-                    </div>
-                  )}
+                  {[
+                    { label: 'Name', value: deviceInfo.name },
+                    { label: 'Model', value: deviceInfo.model },
+                    { label: 'Platform', value: deviceInfo.platform },
+                    { label: 'OS Version', value: deviceInfo.osVersion },
+                    { label: 'Serial', value: deviceInfo.serialNumber },
+                    { label: 'UDID', value: deviceInfo.udid },
+                    { label: 'Model No.', value: deviceInfo.modelNumber },
+                    { label: 'CPU Arch', value: deviceInfo.cpuArch },
+                    { label: 'ROM', value: deviceInfo.rom },
+                    { label: 'IMEI 1', value: deviceInfo.imei },
+                    { label: 'IMEI 2', value: deviceInfo.imei2 },
+                    { label: 'MAC Address', value: deviceInfo.macAddress },
+                    { label: 'SIM (ICCID)', value: deviceInfo.simNumber },
+                  ]
+                    .filter((row) => row.value)
+                    .map((row) => (
+                      <div key={row.label} className="flex justify-between text-sm">
+                        <span className="text-gray-600">{row.label}:</span>
+                        <span className="font-medium text-gray-900 truncate max-w-[220px]">{row.value}</span>
+                      </div>
+                    ))}
                 </div>
                 <div className="flex justify-between gap-3 pt-4">
                   <Button type="button" variant="outline" onClick={handleBack}>
