@@ -1,15 +1,56 @@
-# React + TypeScript + Vite
+# KnoxAdmin Client — Frontend Portal
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+React + TypeScript + Vite frontend for the KnoxAdmin admin portal.
 
-Currently, two official plugins are available:
+- **Framework:** React + TypeScript + Vite
+- **Styling:** Tailwind CSS
+- **State Management:** Zustand
+- **Build Tool:** Vite with HMR (Hot Module Reload)
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+---
 
-## React Compiler
+## Getting Started
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+### Prerequisites
+
+- Node.js 22+
+- npm / pnpm
+- Backend running on `http://localhost:3000` (see `../knoxadmin/README.md`)
+
+### Setup
+
+```bash
+npm install
+npm run dev            # Starts on http://localhost:5173
+```
+
+The dev server automatically **proxies `/api` requests to `http://localhost:3000`** (configured in `vite.config.ts`).
+
+### Build for Production
+
+```bash
+npm run build          # Creates optimized production build in `dist/`
+npm run preview        # Preview production build locally
+```
+
+### Development
+
+```bash
+npm run dev            # Start dev server with HMR
+npm run lint           # Run ESLint
+npm run type-check     # Check TypeScript types
+```
+
+---
+
+## Architecture Notes
+
+- **API Communication:** All API calls proxy through Vite's dev server to the backend
+- **Authentication:** Uses JWT tokens from backend (stored in browser)
+- **Zustand Stores:** Located in `src/stores/` for state management
+- **Components:** Modular components in `src/components/`
+
+---
 
 ## Expanding the ESLint configuration
 
