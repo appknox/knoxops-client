@@ -1,73 +1,90 @@
-# React + TypeScript + Vite
+# KnoxOps Client — Frontend
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+React + TypeScript frontend for the KnoxOps admin portal. Served via nginx, proxies `/api/*` to the knoxops backend.
 
-Currently, two official plugins are available:
+- **Stack:** React + TypeScript + Vite + Zustand + Tailwind CSS + shadcn/ui
+- **Auth:** JWT (stored in memory) + Google OIDC SSO
+- **Device Detection:** WebUSB (Android) + Local Agent on port 17392 (iOS)
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+---
 
-## React Compiler
+## Getting Started
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+### Local Development
 
-## Expanding the ESLint configuration
-
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
-
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```bash
+npm install
+npm run dev   # starts on http://localhost:5173 (proxies /api → localhost:3000)
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+Requires the backend (`knoxops`) running on port 3000.
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+### Build
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```bash
+npx vite build   # outputs to dist/
 ```
+
+> `tsc` type checking is skipped in the build — use your editor or `npx tsc --noEmit` for type checking.
+
+---
+
+## Running with Docker
+
+```bash
+# From knoxops repo root (builds both backend + frontend)
+docker-compose up
+```
+
+Frontend is served by nginx on port 80. `/api/*` requests are proxied to the `knoxops` backend container.
+
+---
+
+## Device Detection
+
+### Android — WebUSB
+
+Runs entirely in the browser. No backend or agent required.
+
+- Requires Chrome or Edge (Firefox/Safari don't support WebUSB)
+- USB Debugging must be enabled on the Android device
+- If you see "Unable to claim interface", run `adb kill-server` first
+
+### iOS — Local Agent
+
+Requires the **KnoxOps Agent** running on the same machine as the browser.
+
+```bash
+# In the knoxops repo
+brew install libimobiledevice
+cd agent && npm install && npm start
+# Agent runs on http://localhost:17392
+```
+
+The wizard detects whether the agent is running and shows instructions if offline.
+
+---
+
+## CI/CD
+
+Docker images are published to GHCR on every GitHub release or via manual workflow dispatch.
+
+| Image | Registry |
+|-------|----------|
+| `knoxops-client` | `ghcr.io/appknox/knoxops-client` |
+
+To build manually from a branch:
+1. Go to **Actions** → **Manual Publish docker image to ghcr** → **Run workflow**
+2. Enter the branch name (e.g. `feat/knoxops`)
+
+Image tag format: `knoxops-client-<commit-sha>`
+
+---
+
+## Environment Variables
+
+Vite env vars are baked into the bundle at build time. If not set, sensible defaults are used:
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `VITE_API_URL` | `/api` | Backend API base URL |
