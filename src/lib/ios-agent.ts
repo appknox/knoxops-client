@@ -1,4 +1,4 @@
-const AGENT_BASE = 'http://localhost:7000';
+const AGENT_BASE = 'http://localhost:17392';
 
 export interface IosDetectResult {
   platform: 'ios';
