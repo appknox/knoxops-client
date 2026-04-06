@@ -23,6 +23,10 @@ const roleToPermissions = (
       return { devices: 'read', onprem: 'read' };
     case 'full_editor':
       return { devices: 'read_write', onprem: 'read_write' };
+    case 'devices_admin_onprem_viewer':
+      return { devices: 'read_write', onprem: 'read' };
+    case 'onprem_admin_devices_viewer':
+      return { devices: 'read', onprem: 'read_write' };
   }
 };
 
@@ -34,15 +38,14 @@ const permissionsToRole = (
   // Map only valid role combinations - these have inverses via roleToPermissions
   if (devices === 'read_write' && onprem === 'read_write') return 'full_editor';
   if (devices === 'read_write' && onprem === 'none') return 'devices_admin';
+  if (devices === 'read_write' && onprem === 'read') return 'devices_admin_onprem_viewer';
   if (devices === 'read' && onprem === 'none') return 'devices_viewer';
+  if (devices === 'read' && onprem === 'read_write') return 'onprem_admin_devices_viewer';
   if (devices === 'none' && onprem === 'read_write') return 'onprem_admin';
   if (devices === 'none' && onprem === 'read') return 'onprem_viewer';
   if (devices === 'read' && onprem === 'read') return 'full_viewer';
   if (devices === 'none' && onprem === 'none') return 'full_viewer';
 
-  // Invalid combinations: revert to full_viewer (least privileges)
-  // This prevents asymmetric permission states where one module is read_write
-  // and the other is read (which doesn't map to any defined role)
   return 'full_viewer';
 };
 

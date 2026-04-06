@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, Save, Download, AlertCircle, Upload, Trash2, File } from 'lucide-react';
+import { ArrowLeft, Save, Download, AlertCircle, Upload, Trash2, File, Loader2 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { Button, Input, Select, Textarea, Card, CardHeader, CardBody, UserSearchCombobox } from '@/components/ui';
 import { useOnpremStore } from '@/stores';
@@ -394,6 +394,7 @@ const RegisterOnpremPage = () => {
   const isEditMode = !!id;
 
   const { createDeployment, updateDeployment, isLoading } = useOnpremStore();
+  const [isLoadingData, setIsLoadingData] = useState(isEditMode);
   const [formData, setFormData] = useState<FormData>(initialFormData);
   const [existingDeployment, setExistingDeployment] = useState<OnpremDeployment | null>(null);
   const [prerequisiteFile, setPrerequisiteFile] = useState<File | null>(null);
@@ -465,6 +466,8 @@ const RegisterOnpremPage = () => {
 
         // Load existing documents
         onpremApi.listDocuments(id).then(setExistingDocuments).catch(() => setExistingDocuments([]));
+      }).finally(() => {
+        setIsLoadingData(false);
       });
     }
   }, [isEditMode, id]);
@@ -1080,18 +1083,7 @@ const RegisterOnpremPage = () => {
         setUploadingFile(false);
       }
 
-      // Refresh deployment data after file uploads to show download buttons
-      if (isEditMode && (prerequisiteFile || sslCertificateFile || documentFiles.length > 0)) {
-        const updatedDeployment = await onpremApi.getById(deploymentId);
-        setExistingDeployment(updatedDeployment);
-        // Reload documents after upload
-        onpremApi.listDocuments(deploymentId).then(setExistingDocuments).catch(() => {});
-      }
-
-      // Only navigate away if we're creating a new deployment
-      if (!isEditMode) {
-        navigate('/onprem');
-      }
+      navigate('/onprem');
     } catch (error) {
       console.error('Failed to save deployment:', error);
       const { formError: parsedFormError, fieldErrors: parsedFieldErrors } = parseApiError(error);
@@ -1199,7 +1191,12 @@ const RegisterOnpremPage = () => {
   };
 
   return (
-    <div>
+    <div className="relative">
+      {(isLoadingData || isLoading) && (
+        <div className="absolute inset-0 z-10 flex items-center justify-center bg-white/60 backdrop-blur-sm">
+          <Loader2 className="h-8 w-8 animate-spin text-primary" />
+        </div>
+      )}
       {/* Header */}
       <div className="flex items-center gap-4 mb-6">
         <Button variant="ghost" onClick={() => navigate('/onprem')}>

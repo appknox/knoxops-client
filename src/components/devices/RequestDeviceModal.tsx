@@ -22,9 +22,10 @@ type RequestFormData = z.infer<typeof requestSchema>;
 interface RequestDeviceModalProps {
   isOpen: boolean;
   onClose: () => void;
+  onSuccess?: () => void;
 }
 
-export function RequestDeviceModal({ isOpen, onClose }: RequestDeviceModalProps) {
+export function RequestDeviceModal({ isOpen, onClose, onSuccess }: RequestDeviceModalProps) {
   const { createRequest } = useDeviceRequestStore();
   const { user } = useAuthStore();
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -91,6 +92,7 @@ export function RequestDeviceModal({ isOpen, onClose }: RequestDeviceModalProps)
     try {
       await createRequest(data);
       handleClose();
+      onSuccess?.();
     } finally {
       setIsSubmitting(false);
     }

@@ -52,7 +52,7 @@ export function LicenseRequestDetailsModal({
   isAdmin,
   onFileUploaded,
 }: LicenseRequestDetailsModalProps) {
-  const { uploadFile, generateToken, cancelRequest } = useOnpremLicenseRequestStore();
+  const { uploadFile, cancelRequest } = useOnpremLicenseRequestStore();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [isDownloading, setIsDownloading] = useState(false);
@@ -186,9 +186,13 @@ export function LicenseRequestDetailsModal({
   const handleDownload = async () => {
     setIsDownloading(true);
     try {
-      const { token } = await generateToken(request!.id);
-      const downloadUrl = `${window.location.origin}/api${onpremLicenseRequestsApi.getDownloadUrl(request!.id, token)}`;
-      window.open(downloadUrl, '_blank');
+      const { downloadUrl, fileName } = await onpremLicenseRequestsApi.downloadFile(request!.id);
+      const a = document.createElement('a');
+      a.href = downloadUrl;
+      a.download = fileName;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
     } catch (error: any) {
       console.error('Failed to download:', error);
     } finally {

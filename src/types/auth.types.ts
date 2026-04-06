@@ -5,7 +5,9 @@ export type Role =
   | 'onprem_admin'
   | 'onprem_viewer'
   | 'full_viewer'
-  | 'full_editor';
+  | 'full_editor'
+  | 'devices_admin_onprem_viewer'
+  | 'onprem_admin_devices_viewer';
 
 export interface User {
   id: string;
