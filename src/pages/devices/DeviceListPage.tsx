@@ -4,9 +4,11 @@ import { Plus } from 'lucide-react';
 import { Button } from '@/components/ui';
 import { RequestDeviceModal } from '@/components/devices';
 import { usePermissions } from '@/hooks/usePermissions';
+import { useDeviceRequestStore } from '@/stores/deviceRequestStore';
 
 const DeviceListPage = () => {
   const { canManageDevices } = usePermissions();
+  const { fetchRequests } = useDeviceRequestStore();
   const [showRequestModal, setShowRequestModal] = useState(false);
 
   return (
@@ -76,6 +78,7 @@ const DeviceListPage = () => {
       <RequestDeviceModal
         isOpen={showRequestModal}
         onClose={() => setShowRequestModal(false)}
+        onSuccess={() => fetchRequests()}
       />
     </div>
   );

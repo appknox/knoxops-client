@@ -74,4 +74,13 @@ export const onpremLicenseRequestsApi = {
     // This will be constructed in the component using the API base URL
     return `/onprem/license-requests/${requestId}/download?token=${token}`;
   },
+
+  downloadFile: async (requestId: string): Promise<{ downloadUrl: string; fileName: string }> => {
+    const { token } = await onpremLicenseRequestsApi.generateToken(requestId);
+    const response = await apiClient.get<{ downloadUrl: string; fileName: string }>(
+      `/onprem/license-requests/${requestId}/download`,
+      { params: { token } }
+    );
+    return response.data;
+  },
 };

@@ -6,6 +6,7 @@ export { EditDeviceModal } from './EditDeviceModal';
 export { DeleteDeviceDialog } from './DeleteDeviceDialog';
 export { DeviceAuditLogsModal } from './DeviceAuditLogsModal';
 export { FetchDeviceWizard } from './FetchDeviceWizard';
+export { AssignedToCombobox } from './AssignedToCombobox';
 export { RequestDeviceModal } from './RequestDeviceModal';
 export { RejectRequestModal } from './RejectRequestModal';
 export { CompleteRequestModal } from './CompleteRequestModal';

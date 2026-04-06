@@ -1,13 +1,14 @@
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Loader2, Usb } from 'lucide-react';
 import { Modal, Button, Input, Select, Textarea } from '@/components/ui';
 import { useDeviceStore } from '@/stores';
 import { devicesApi } from '@/api/devices';
 import { PURPOSE_OPTIONS } from '@/constants/deviceOptions';
 import { FetchDeviceWizard } from './FetchDeviceWizard';
+import { AssignedToCombobox } from './AssignedToCombobox';
 import type { Device, DeviceType, DeviceStatus } from '@/types';
 
 const conditionOptions = [
@@ -105,7 +106,8 @@ const cpuArchOptions = [
 
 const purposeOptions = [
   { value: '', label: 'Select Purpose' },
-  ...PURPOSE_OPTIONS.filter((opt) => opt.value !== '__other__'),
+  { value: 'available', label: 'Available' },
+  ...PURPOSE_OPTIONS.filter((opt) => opt.value !== '__other__' && opt.value !== 'available'),
 ];
 
 const colourOptions = [
@@ -203,13 +205,47 @@ const EditDeviceModal = ({ isOpen, onClose, device, readOnly = false }: EditDevi
     }
   }, [isChargingHub, setValue]);
 
-  // Auto-select purpose as "To Be Repaired" when status changes to "Out for repair"
   const selectedStatus = watch('status');
+  const selectedPurpose = watch('purpose');
+
+  // Track whether form has been initialized to skip effects on first render
+  const statusInitialized = useRef(false);
+  const purposeInitialized = useRef(false);
+
+  // Reset initialized refs when modal opens with a new device
   useEffect(() => {
-    if (selectedStatus === 'maintenance') {
+    statusInitialized.current = false;
+    purposeInitialized.current = false;
+  }, [device?.id]);
+
+  // Reset dependent fields when status changes (skip on initial mount)
+  useEffect(() => {
+    if (!statusInitialized.current) {
+      statusInitialized.current = true;
+      return;
+    }
+    if (selectedStatus === 'in_inventory') {
+      setValue('purpose', 'available');
+      setValue('assignedTo', '');
+    } else if (selectedStatus === 'maintenance') {
       setValue('purpose', 'toBeRepaired');
+      setValue('assignedTo', '');
+    } else if (selectedStatus === 'for_sale' || selectedStatus === 'sold' || selectedStatus === 'decommissioned') {
+      setValue('assignedTo', '');
     }
   }, [selectedStatus, setValue]);
+
+  // Reset status and assignedTo when purpose is set to available (skip on initial mount)
+  useEffect(() => {
+    if (!purposeInitialized.current) {
+      purposeInitialized.current = true;
+      return;
+    }
+    if (selectedPurpose === 'available') {
+      setValue('status', 'in_inventory');
+      setValue('assignedTo', '');
+    }
+  }, [selectedPurpose, setValue]);
 
   const handleSerialBlur = async (e: React.FocusEvent<HTMLInputElement>) => {
     const value = e.target.value.trim();
@@ -260,7 +296,7 @@ const EditDeviceModal = ({ isOpen, onClose, device, readOnly = false }: EditDevi
         model: data.model?.trim() || undefined,
         // Operational fields as direct columns
         purpose: data.purpose?.trim() || undefined,
-        assignedTo: data.assignedTo?.trim() || undefined,
+        assignedTo: data.assignedTo?.trim() || null,
         description: data.description?.trim() || undefined,
         // Device sale fields
         condition: data.condition?.trim() || undefined,
@@ -307,6 +343,43 @@ const EditDeviceModal = ({ isOpen, onClose, device, readOnly = false }: EditDevi
             <div className="grid grid-cols-2 gap-4">
               <Input label="Model Number" {...register('modelNumber')} placeholder="e.g. NNCK2 / A1779" disabled={readOnly} />
               <Input label="UDID" {...register('udid')} placeholder="Auto-filled from USB" disabled={readOnly} />
+            </div>
+          )}
+
+          {/* PURPOSE / STATUS — shown after UDID, above technical specs */}
+          <div className="grid grid-cols-2 gap-4">
+            <Select label="Purpose / Status" options={purposeOptions} {...register('purpose')} disabled={readOnly} />
+            <Select label="Inventory Status" options={statusOptions} {...register('status')} disabled={readOnly} error={errors.status?.message} />
+          </div>
+
+          {/* Device Sale Fields — only when status = for_sale */}
+          {selectedStatus === 'for_sale' && (
+            <div className="space-y-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+              <h3 className="text-sm font-semibold text-blue-900">Sale Information</h3>
+              <div className="grid grid-cols-2 gap-4">
+                <Select
+                  label="Condition *"
+                  options={conditionOptions}
+                  {...register('condition')}
+                  disabled={readOnly}
+                  error={errors.condition?.message}
+                />
+                <Input
+                  label="Asking Price (₹) *"
+                  type="number"
+                  step="0.01"
+                  {...register('askingPrice')}
+                  disabled={readOnly}
+                  error={errors.askingPrice?.message}
+                />
+              </div>
+              <Textarea
+                label="Condition Notes"
+                {...register('conditionNotes')}
+                placeholder="e.g. Minor scratches on back, battery health 85%..."
+                rows={2}
+                disabled={readOnly}
+              />
             </div>
           )}
 
@@ -370,42 +443,6 @@ const EditDeviceModal = ({ isOpen, onClose, device, readOnly = false }: EditDevi
             </div>
           )}
 
-          <div className="grid grid-cols-2 gap-4">
-            <Select label="Purpose / Status" options={purposeOptions} {...register('purpose')} disabled={readOnly} />
-            <Select label="Inventory Status" options={statusOptions} {...register('status')} disabled={readOnly} error={errors.status?.message} />
-          </div>
-
-          {/* Device Sale Fields — only when status = for_sale */}
-          {selectedStatus === 'for_sale' && (
-            <div className="space-y-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
-              <h3 className="text-sm font-semibold text-blue-900">Sale Information</h3>
-              <div className="grid grid-cols-2 gap-4">
-                <Select
-                  label="Condition *"
-                  options={conditionOptions}
-                  {...register('condition')}
-                  disabled={readOnly}
-                  error={errors.condition?.message}
-                />
-                <Input
-                  label="Asking Price (₹) *"
-                  type="number"
-                  step="0.01"
-                  {...register('askingPrice')}
-                  disabled={readOnly}
-                  error={errors.askingPrice?.message}
-                />
-              </div>
-              <Textarea
-                label="Condition Notes"
-                {...register('conditionNotes')}
-                placeholder="e.g. Minor scratches on back, battery health 85%..."
-                rows={2}
-                disabled={readOnly}
-              />
-            </div>
-          )}
-
           {/* NETWORK — only for mobile/tablet/workstation */}
           {showNetworkSection && (
             <>
@@ -419,11 +456,11 @@ const EditDeviceModal = ({ isOpen, onClose, device, readOnly = false }: EditDevi
           )}
 
           <div>
-            <Input
-              label="Assigned To"
-              {...register('assignedTo')}
-              placeholder="Search user..."
+            <AssignedToCombobox
+              value={watch('assignedTo') || ''}
+              onChange={(value) => setValue('assignedTo', value)}
               disabled={readOnly}
+              error={errors.assignedTo?.message}
             />
           </div>
 

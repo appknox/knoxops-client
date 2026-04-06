@@ -2,10 +2,10 @@ import { useNavigate, Link } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { ChevronRight, Usb, Loader2 } from 'lucide-react';
 import { Button, Input, Select, Textarea, Card, CardBody } from '@/components/ui';
-import { FetchDeviceWizard } from '@/components/devices';
+import { FetchDeviceWizard, AssignedToCombobox } from '@/components/devices';
 import { useDeviceStore } from '@/stores';
 import { devicesApi } from '@/api/devices';
 import { PURPOSE_OPTIONS } from '@/constants/deviceOptions';
@@ -79,8 +79,8 @@ const cpuArchOptions = [
 
 const purposeOptions = [
   { value: '', label: 'Select Purpose' },
-  ...PURPOSE_OPTIONS.filter((opt) => opt.value !== '__other__'),
-  { value: 'toBeRepaired', label: 'To Be Repaired' },
+  { value: 'available', label: 'Available' },
+  ...PURPOSE_OPTIONS.filter((opt) => opt.value !== '__other__' && opt.value !== 'available'),
 ];
 
 const colourOptions = [
@@ -124,6 +124,7 @@ const RegisterDevicePage = () => {
     defaultValues: {
       status: 'in_inventory',
       type: 'mobile',
+      purpose: 'available',
     },
   });
 
@@ -140,13 +141,41 @@ const RegisterDevicePage = () => {
     }
   }, [isChargingHub, setValue]);
 
-  // Auto-select purpose as "To Be Repaired" when status changes to "Out for repair"
   const selectedStatus = watch('status');
+  const selectedPurpose = watch('purpose');
+
+  // Track whether form has been initialized to skip effects on first render
+  const statusInitialized = useRef(false);
+  const purposeInitialized = useRef(false);
+
+  // Reset dependent fields when status changes (skip on initial mount)
   useEffect(() => {
-    if (selectedStatus === 'maintenance') {
+    if (!statusInitialized.current) {
+      statusInitialized.current = true;
+      return;
+    }
+    if (selectedStatus === 'in_inventory') {
+      setValue('purpose', 'available');
+      setValue('assignedTo', '');
+    } else if (selectedStatus === 'maintenance') {
       setValue('purpose', 'toBeRepaired');
+      setValue('assignedTo', '');
+    } else if (selectedStatus === 'for_sale' || selectedStatus === 'sold' || selectedStatus === 'decommissioned') {
+      setValue('assignedTo', '');
     }
   }, [selectedStatus, setValue]);
+
+  // Reset status and assignedTo when purpose is set to available (skip on initial mount)
+  useEffect(() => {
+    if (!purposeInitialized.current) {
+      purposeInitialized.current = true;
+      return;
+    }
+    if (selectedPurpose === 'available') {
+      setValue('status', 'in_inventory');
+      setValue('assignedTo', '');
+    }
+  }, [selectedPurpose, setValue]);
 
   const handleSerialBlur = async (e: React.FocusEvent<HTMLInputElement>) => {
     const value = e.target.value.trim();
@@ -194,7 +223,7 @@ const RegisterDevicePage = () => {
         model: data.model?.trim() || undefined,
         // Operational fields as direct columns
         purpose: data.purpose?.trim() || undefined,
-        assignedTo: data.assignedTo?.trim() || undefined,
+        assignedTo: data.assignedTo?.trim() || null,
         description: data.description?.trim() || undefined,
         // Technical specs + network in metadata
         ...(Object.keys(metadata).length > 0 ? { metadata } : {}),
@@ -273,6 +302,30 @@ const RegisterDevicePage = () => {
               </div>
             </section>
 
+            {/* DEVICE STATUS & ASSIGNMENT — above technical specs */}
+            <section>
+              <h2 className="text-sm font-semibold text-primary-600 uppercase tracking-wide mb-4">
+                Device Status & Assignment
+              </h2>
+              <div className="grid grid-cols-3 gap-4">
+                <Select
+                  label="Inventory Status"
+                  options={statusOptions}
+                  {...register('status')}
+                />
+                <Select
+                  label="Purpose"
+                  options={purposeOptions}
+                  {...register('purpose')}
+                />
+                <AssignedToCombobox
+                  value={watch('assignedTo') || ''}
+                  onChange={(value) => setValue('assignedTo', value)}
+                  error={errors.assignedTo?.message}
+                />
+              </div>
+            </section>
+
             {/* TECHNICAL SPECS — for all device types */}
             <section>
               <h2 className="text-sm font-semibold text-primary-600 uppercase tracking-wide mb-4">
@@ -316,30 +369,6 @@ const RegisterDevicePage = () => {
                 </div>
               </section>
             )}
-
-            {/* DEVICE STATUS & ASSIGNMENT */}
-            <section>
-              <h2 className="text-sm font-semibold text-primary-600 uppercase tracking-wide mb-4">
-                Device Status & Assignment
-              </h2>
-              <div className="grid grid-cols-3 gap-4">
-                <Select
-                  label="Inventory Status"
-                  options={statusOptions}
-                  {...register('status')}
-                />
-                <Select
-                  label="Purpose"
-                  options={purposeOptions}
-                  {...register('purpose')}
-                />
-                <Input
-                  label="Assigned To"
-                  {...register('assignedTo')}
-                  placeholder="Person name..."
-                />
-              </div>
-            </section>
 
             {/* NETWORK — only for mobile/tablet/workstation */}
             {showNetworkSection && (

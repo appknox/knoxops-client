@@ -68,7 +68,7 @@ export interface CreateDeviceInput {
   description?: string;
   // Operational fields (direct columns)
   purpose?: string;
-  assignedTo?: string;
+  assignedTo?: string | null;
   // Device sale fields
   condition?: string;
   conditionNotes?: string;

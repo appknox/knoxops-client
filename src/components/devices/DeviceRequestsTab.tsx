@@ -7,13 +7,13 @@ import { RequestStatusBadge } from './RequestStatusBadge.js';
 import { RejectRequestModal } from './RejectRequestModal.js';
 import { CompleteRequestModal } from './CompleteRequestModal.js';
 import { RequestDetailsModal } from './RequestDetailsModal.js';
-import { ChevronLeft, ChevronRight, AlertCircle } from 'lucide-react';
+import { ChevronLeft, ChevronRight, AlertCircle, Loader2 } from 'lucide-react';
 import type { DeviceRequest } from '@/types/device-request.types.js';
 
 const PAGE_SIZE = 20;
 
 export function DeviceRequestsTab() {
-  const { requests, fetchRequests, approveRequest, pagination, isLoading } = useDeviceRequestStore();
+  const { requests, fetchRequests, approveRequest, isLoading } = useDeviceRequestStore();
   const { user } = useAuthStore();
   const { canManageDevices } = usePermissions();
   const [page, setPage] = useState(1);
@@ -30,6 +30,7 @@ export function DeviceRequestsTab() {
     setApprovingId(id);
     try {
       await approveRequest(id);
+      await fetchRequests();
     } finally {
       setApprovingId(null);
     }
@@ -40,7 +41,7 @@ export function DeviceRequestsTab() {
   const paginatedRequests = displayedRequests.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
   const totalPages = Math.ceil(displayedRequests.length / PAGE_SIZE);
 
-  if (isLoading) {
+  if (isLoading && requests.length === 0) {
     return (
       <div className="flex items-center justify-center h-96">
         <div className="text-gray-500">Loading requests...</div>
@@ -48,7 +49,7 @@ export function DeviceRequestsTab() {
     );
   }
 
-  if (displayedRequests.length === 0) {
+  if (!isLoading && displayedRequests.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center h-96 text-center">
         <AlertCircle className="h-12 w-12 text-gray-300 mb-4" />
@@ -72,6 +73,14 @@ export function DeviceRequestsTab() {
 
   return (
     <>
+      {/* Subtle refresh indicator — doesn't replace the table */}
+      {isLoading && (
+        <div className="flex items-center gap-2 px-6 py-2 text-sm text-gray-400">
+          <Loader2 className="h-3 w-3 animate-spin" />
+          Refreshing...
+        </div>
+      )}
+
       <div className="overflow-x-auto">
         <table className="w-full">
           <thead className="bg-gray-50 border-b border-gray-200">
@@ -200,7 +209,10 @@ export function DeviceRequestsTab() {
       {rejectingRequest && (
         <RejectRequestModal
           isOpen={!!rejectingRequest}
-          onClose={() => setRejectingRequest(null)}
+          onClose={() => {
+            setRejectingRequest(null);
+            fetchRequests();
+          }}
           request={rejectingRequest}
         />
       )}
@@ -213,7 +225,10 @@ export function DeviceRequestsTab() {
       {completingRequest && (
         <CompleteRequestModal
           isOpen={!!completingRequest}
-          onClose={() => setCompletingRequest(null)}
+          onClose={() => {
+            setCompletingRequest(null);
+            fetchRequests();
+          }}
           requestId={completingRequest.id}
           request={completingRequest}
         />
