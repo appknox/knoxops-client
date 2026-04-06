@@ -401,6 +401,8 @@ const RegisterOnpremPage = () => {
   const [documentFiles, setDocumentFiles] = useState<File[]>([]);
   const [existingDocuments, setExistingDocuments] = useState<OnpremDocument[]>([]);
   const [uploadingFile, setUploadingFile] = useState(false);
+  const [downloadingId, setDownloadingId] = useState<string | null>(null);
+  const [deletingDocumentId, setDeletingDocumentId] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [checkingEmail, setCheckingEmail] = useState(false);
@@ -1108,47 +1110,91 @@ const RegisterOnpremPage = () => {
 
   const handleDownloadPrerequisite = async () => {
     if (!existingDeployment?.prerequisiteFileUrl) return;
+    setDownloadingId('prerequisite');
     try {
-      const blob = await onpremApi.downloadPrerequisite(existingDeployment.id);
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = existingDeployment.prerequisiteFileName || 'prerequisite.xlsx';
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-    } catch (error) {
+      const response = await onpremApi.downloadPrerequisite(existingDeployment.id);
+      console.log('Download response:', response);
+      console.log('Response keys:', Object.keys(response || {}));
+      console.log('downloadUrl:', response?.downloadUrl);
+
+      const url = response?.downloadUrl || (response as any)?.signedUrl;
+      if (!url) {
+        console.warn('No downloadUrl or signedUrl in response:', response);
+        alert('❌ Failed to generate download link');
+        return;
+      }
+      window.open(url, '_blank');
+    } catch (error: any) {
       console.error('Failed to download file:', error);
+      alert(`❌ Download failed: ${error?.response?.data?.message || error?.message || 'Unknown error'}`);
+    } finally {
+      setDownloadingId(null);
     }
   };
 
   const handleDownloadSslCertificate = async () => {
     if (!existingDeployment?.sslCertificateFileUrl) return;
+    setDownloadingId('ssl-certificate');
     try {
-      const blob = await onpremApi.downloadSslCertificate(existingDeployment.id);
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      // Use the filename from the URL, or fallback to a default
-      const filename = existingDeployment.sslCertificateFileUrl.split('/').pop() || `${existingDeployment.id}-ssl-certs.zip`;
-      a.download = filename;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-    } catch (error) {
+      const response = await onpremApi.downloadSslCertificate(existingDeployment.id);
+      console.log('SSL download response:', response);
+      console.log('SSL response keys:', Object.keys(response || {}));
+      console.log('downloadUrl:', response?.downloadUrl);
+
+      const url = response?.downloadUrl || (response as any)?.signedUrl;
+      if (!url) {
+        console.warn('No downloadUrl or signedUrl in SSL response:', response);
+        alert('❌ Failed to generate download link');
+        return;
+      }
+      window.open(url, '_blank');
+    } catch (error: any) {
       console.error('Failed to download SSL certificate:', error);
+      alert(`❌ Download failed: ${error?.response?.data?.message || error?.message || 'Unknown error'}`);
+    } finally {
+      setDownloadingId(null);
     }
   };
 
   const handleDeleteDocument = async (documentId: string) => {
     if (!id) return;
+
+    // Show confirmation prompt
+    const docToDelete = existingDocuments.find((d) => d.id === documentId);
+    const confirmed = window.confirm(
+      `⚠️ Are you sure you want to delete "${docToDelete?.fileName}"?\n\nThis action cannot be undone.`
+    );
+
+    if (!confirmed) return;
+
+    setDeletingDocumentId(documentId);
     try {
       await onpremApi.deleteDocument(id, documentId);
       setExistingDocuments((docs) => docs.filter((d) => d.id !== documentId));
-    } catch (error) {
+      alert('✅ Document deleted successfully');
+    } catch (error: any) {
       console.error('Failed to delete document:', error);
+      alert(`❌ Delete failed: ${error?.message || 'Unknown error'}`);
+    } finally {
+      setDeletingDocumentId(null);
+    }
+  };
+
+  const handleDownloadDocument = async (doc: typeof existingDocuments[0]) => {
+    setDownloadingId(doc.id);
+    try {
+      if (!id) {
+        alert('❌ Unable to download: Deployment ID is missing');
+        return;
+      }
+      // Get signed URL from backend
+      const response = await onpremApi.downloadDocument(id, doc.id);
+      window.open(response.downloadUrl, '_blank');
+    } catch (error: any) {
+      console.error('Failed to generate download link:', error);
+      alert(`❌ Failed to generate download link: ${error?.message || 'Unknown error'}`);
+    } finally {
+      setDownloadingId(null);
     }
   };
 
@@ -1274,9 +1320,19 @@ const RegisterOnpremPage = () => {
                       Current file: {existingDeployment.prerequisiteFileName}
                     </p>
                     {existingDeployment?.prerequisiteFileUrl && (
-                      <Button type="button" variant="outline" size="sm" onClick={handleDownloadPrerequisite}>
-                        <Download className="h-4 w-4 mr-1" />
-                        Download
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={handleDownloadPrerequisite}
+                        disabled={downloadingId === 'prerequisite'}
+                      >
+                        {downloadingId === 'prerequisite' ? (
+                          <div className="h-4 w-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin mr-1" />
+                        ) : (
+                          <Download className="h-4 w-4 mr-1" />
+                        )}
+                        {downloadingId === 'prerequisite' ? 'Downloading...' : 'Download'}
                       </Button>
                     )}
                   </div>
@@ -1709,9 +1765,19 @@ const RegisterOnpremPage = () => {
                       className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-primary-50 file:text-primary-700 hover:file:bg-primary-100"
                     />
                     {existingDeployment?.sslCertificateFileUrl && (
-                      <Button type="button" variant="outline" size="sm" onClick={handleDownloadSslCertificate}>
-                        <Download className="h-4 w-4 mr-1" />
-                        Download
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={handleDownloadSslCertificate}
+                        disabled={downloadingId === 'ssl-certificate'}
+                      >
+                        {downloadingId === 'ssl-certificate' ? (
+                          <div className="h-4 w-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin mr-1" />
+                        ) : (
+                          <Download className="h-4 w-4 mr-1" />
+                        )}
+                        {downloadingId === 'ssl-certificate' ? 'Downloading...' : 'Download'}
                       </Button>
                     )}
                   </div>
@@ -1751,9 +1817,29 @@ const RegisterOnpremPage = () => {
                     type="button"
                     variant="ghost"
                     size="sm"
-                    onClick={() => handleDeleteDocument(doc.id)}
+                    onClick={() => handleDownloadDocument(doc)}
+                    disabled={downloadingId === doc.id}
+                    title={downloadingId === doc.id ? 'Downloading...' : 'Download document'}
                   >
-                    <Trash2 className="h-4 w-4 text-red-600" />
+                    {downloadingId === doc.id ? (
+                      <div className="h-4 w-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
+                    ) : (
+                      <Download className="h-4 w-4 text-blue-600" />
+                    )}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => handleDeleteDocument(doc.id)}
+                    disabled={deletingDocumentId === doc.id}
+                    title={deletingDocumentId === doc.id ? 'Deleting...' : 'Delete document'}
+                  >
+                    {deletingDocumentId === doc.id ? (
+                      <div className="h-4 w-4 border-2 border-red-600 border-t-transparent rounded-full animate-spin" />
+                    ) : (
+                      <Trash2 className="h-4 w-4 text-red-600" />
+                    )}
                   </Button>
                 </div>
               ))}

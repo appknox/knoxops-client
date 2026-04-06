@@ -156,10 +156,10 @@ export const onpremApi = {
     return response.data;
   },
 
-  downloadPrerequisite: async (deploymentId: string): Promise<Blob> => {
-    const response = await apiClient.get(`/onprem/${deploymentId}/prerequisite`, {
-      responseType: 'blob',
-    });
+  downloadPrerequisite: async (deploymentId: string): Promise<{ downloadUrl: string; fileName: string }> => {
+    const response = await apiClient.get<{ downloadUrl: string; fileName: string }>(
+      `/onprem/${deploymentId}/prerequisite`
+    );
     return response.data;
   },
 
@@ -178,10 +178,10 @@ export const onpremApi = {
     return response.data;
   },
 
-  downloadSslCertificate: async (deploymentId: string): Promise<Blob> => {
-    const response = await apiClient.get(`/onprem/${deploymentId}/ssl-certificate`, {
-      responseType: 'blob',
-    });
+  downloadSslCertificate: async (deploymentId: string): Promise<{ downloadUrl: string; fileName: string }> => {
+    const response = await apiClient.get<{ downloadUrl: string; fileName: string }>(
+      `/onprem/${deploymentId}/ssl-certificate`
+    );
     return response.data;
   },
 
@@ -287,10 +287,37 @@ export const onpremApi = {
     await apiClient.delete(`/onprem/${deploymentId}/documents/${documentId}`);
   },
 
+  downloadDocument: async (deploymentId: string, documentId: string): Promise<{ downloadUrl: string; fileName: string }> => {
+    const response = await apiClient.get<{ downloadUrl: string; fileName: string }>(
+      `/onprem/${deploymentId}/documents/${documentId}/download`
+    );
+    return response.data;
+  },
+
   downloadAll: async (deploymentId: string): Promise<Blob> => {
     const response = await apiClient.get(`/onprem/${deploymentId}/download-all`, {
       responseType: 'blob',
     });
+    return response.data;
+  },
+
+  // ============================================
+  // LICENSE REQUESTS
+  // ============================================
+
+  generateLicenseDownloadToken: async (requestId: string): Promise<{ token: string; expiresAt: string }> => {
+    const response = await apiClient.post<{ token: string; expiresAt: string }>(
+      `/onprem/license-requests/${requestId}/generate-token`,
+      {}
+    );
+    return response.data;
+  },
+
+  downloadLicenseFile: async (requestId: string, token: string): Promise<{ downloadUrl: string; fileName: string }> => {
+    const response = await apiClient.get<{ downloadUrl: string; fileName: string }>(
+      `/onprem/license-requests/${requestId}/download`,
+      { params: { token } }
+    );
     return response.data;
   },
 

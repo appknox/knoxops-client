@@ -1,3 +1,4 @@
+import { useState, useEffect } from 'react';
 import { cn } from '@/utils/cn';
 import type { Role } from '@/types';
 
@@ -25,11 +26,12 @@ const roleToPermissions = (
   }
 };
 
-// Derive role from permissions
+// Derive role from permissions - only maps exact valid combinations
 const permissionsToRole = (
   devices: PermissionLevel,
   onprem: PermissionLevel
 ): Role => {
+  // Map only valid role combinations - these have inverses via roleToPermissions
   if (devices === 'read_write' && onprem === 'read_write') return 'full_editor';
   if (devices === 'read_write' && onprem === 'none') return 'devices_admin';
   if (devices === 'read' && onprem === 'none') return 'devices_viewer';
@@ -37,7 +39,11 @@ const permissionsToRole = (
   if (devices === 'none' && onprem === 'read') return 'onprem_viewer';
   if (devices === 'read' && onprem === 'read') return 'full_viewer';
   if (devices === 'none' && onprem === 'none') return 'full_viewer';
-  return 'full_viewer'; // Default
+
+  // Invalid combinations: revert to full_viewer (least privileges)
+  // This prevents asymmetric permission states where one module is read_write
+  // and the other is read (which doesn't map to any defined role)
+  return 'full_viewer';
 };
 
 const options: { value: PermissionLevel; label: string }[] = [
@@ -53,19 +59,26 @@ interface SegmentedControlProps {
 }
 
 const SegmentedControl = ({ value, onChange, disabled }: SegmentedControlProps) => {
+  const handleClick = (optionValue: PermissionLevel) => {
+    if (!disabled) {
+      onChange(optionValue);
+    }
+  };
+
   return (
     <div className="inline-flex rounded-lg bg-gray-100 p-1">
       {options.map((option) => (
         <button
           key={option.value}
           type="button"
-          onClick={() => !disabled && onChange(option.value)}
+          onClick={() => handleClick(option.value)}
           disabled={disabled}
           className={cn(
             'px-3 py-1.5 text-xs font-medium rounded-md transition-colors',
             value === option.value
               ? 'bg-primary-500 text-white shadow-sm'
               : 'text-gray-600 hover:text-gray-900',
+            !disabled && 'cursor-pointer',
             disabled && 'opacity-50 cursor-not-allowed'
           )}
         >
@@ -89,11 +102,26 @@ const PermissionsMatrix = ({
   disabled,
   isAdmin,
 }: PermissionsMatrixProps) => {
-  const permissions = roleToPermissions(role);
+  // Track local permissions state independently from role
+  const [localPermissions, setLocalPermissions] = useState(() => roleToPermissions(role));
   const isLocked = isAdmin || role === 'admin';
 
+  // Sync local permissions when role changes from outside
+  useEffect(() => {
+    setLocalPermissions(roleToPermissions(role));
+  }, [role]);
+
   const handleChange = (module: 'devices' | 'onprem', level: PermissionLevel) => {
-    const newPermissions = { ...permissions, [module]: level };
+    // Update local permissions immediately
+    const newPermissions = { ...localPermissions, [module]: level };
+    setLocalPermissions(newPermissions);
+
+    // If both permissions are 'none', keep them without changing role
+    if (newPermissions.devices === 'none' && newPermissions.onprem === 'none') {
+      return;
+    }
+
+    // Convert to role and notify parent
     const newRole = permissionsToRole(newPermissions.devices, newPermissions.onprem);
     onRoleChange(newRole);
   };
@@ -123,7 +151,7 @@ const PermissionsMatrix = ({
           </div>
         </div>
         <SegmentedControl
-          value={permissions.devices}
+          value={localPermissions.devices}
           onChange={(level) => handleChange('devices', level)}
           disabled={disabled || isLocked}
         />
@@ -152,7 +180,7 @@ const PermissionsMatrix = ({
           </div>
         </div>
         <SegmentedControl
-          value={permissions.onprem}
+          value={localPermissions.onprem}
           onChange={(level) => handleChange('onprem', level)}
           disabled={disabled || isLocked}
         />
