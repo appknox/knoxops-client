@@ -8,7 +8,7 @@ import { Avatar } from '@/components/ui';
 const Navbar = () => {
   const location = useLocation();
   const { user, logout } = useAuthStore();
-  const { canViewDevices } = usePermissions();
+  const { canViewDevices, canViewOnprem } = usePermissions();
   const [showUserMenu, setShowUserMenu] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -23,15 +23,12 @@ const Navbar = () => {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  // Filter nav links based on user role
-  const canSeeOnprem = ['admin', 'onprem_admin', 'onprem_viewer', 'full_editor', 'full_viewer'].includes(user?.role || '');
-
   const navLinks = [
     { path: '/dashboard', label: 'Dashboard' },
     // Only show Devices link for users with device access
     ...(canViewDevices ? [{ path: '/devices', label: 'Devices' }] : []),
     // Only show On-Prem link for users with on-prem access
-    ...(canSeeOnprem ? [{ path: '/onprem', label: 'On-Prem' }] : []),
+    ...(canViewOnprem ? [{ path: '/onprem', label: 'On-Prem' }] : []),
     // Only show Settings link for admin users
     ...(user?.role === 'admin' ? [{ path: '/settings', label: 'Settings' }] : []),
   ];

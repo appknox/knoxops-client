@@ -6,13 +6,13 @@ export const usePermissions = () => {
 
   return {
     // On-Prem
-    canManageOnprem: ['admin', 'onprem_admin', 'full_editor'].includes(role ?? ''),
-    canViewOnprem: ['admin', 'onprem_admin', 'onprem_viewer', 'full_editor', 'full_viewer'].includes(role ?? ''),
-    canDeleteOnprem: ['admin', 'full_editor'].includes(role ?? ''),
+    canManageOnprem: ['admin', 'onprem_admin', 'full_editor', 'onprem_admin_devices_viewer'].includes(role ?? ''),
+    canViewOnprem: ['admin', 'onprem_admin', 'onprem_viewer', 'full_editor', 'full_viewer', 'devices_admin_onprem_viewer', 'onprem_admin_devices_viewer'].includes(role ?? ''),
+    canDeleteOnprem: ['admin', 'onprem_admin', 'full_editor', 'onprem_admin_devices_viewer'].includes(role ?? ''),
 
     // Devices
-    canViewDevices: ['admin', 'devices_admin', 'full_editor', 'devices_viewer', 'full_viewer'].includes(role ?? ''),
-    canManageDevices: ['admin', 'devices_admin', 'full_editor'].includes(role ?? ''),
-    canDeleteDevices: ['admin', 'devices_admin', 'full_editor'].includes(role ?? ''),
+    canViewDevices: ['admin', 'devices_admin', 'full_editor', 'devices_viewer', 'full_viewer', 'devices_admin_onprem_viewer', 'onprem_admin_devices_viewer'].includes(role ?? ''),
+    canManageDevices: ['admin', 'devices_admin', 'full_editor', 'devices_admin_onprem_viewer'].includes(role ?? ''),
+    canDeleteDevices: ['admin', 'devices_admin', 'full_editor', 'devices_admin_onprem_viewer'].includes(role ?? ''),
   };
 };
