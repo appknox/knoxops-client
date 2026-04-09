@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { AlertCircle, Plus, Briefcase, Smartphone, UserPlus, FileText } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '@/stores';
+import { usePermissions } from '@/hooks/usePermissions';
 import { onpremApi } from '@/api/onprem';
 import { devicesApi } from '@/api/devices';
 import { auditLogsApi } from '@/api/audit-logs';
@@ -94,12 +95,7 @@ export function DashboardPage() {
     fetchData();
   }, []);
 
-  const canViewDevices = ['admin', 'devices_admin', 'full_editor', 'devices_viewer', 'full_viewer'].includes(
-    user?.role || ''
-  );
-  const canViewOnprem = ['admin', 'onprem_admin', 'onprem_viewer', 'full_editor', 'full_viewer'].includes(
-    user?.role || ''
-  );
+  const { canViewDevices, canViewOnprem, canManageDevices, canManageOnprem } = usePermissions();
   const isAdmin = user?.role === 'admin';
 
   return (
@@ -135,7 +131,7 @@ export function DashboardPage() {
 
         {/* Sidebar */}
         <div className="space-y-6">
-          <QuickActionsCard isAdmin={isAdmin} canViewDevices={canViewDevices} canViewOnprem={canViewOnprem} navigate={navigate} />
+          <QuickActionsCard isAdmin={isAdmin} canManageDevices={canManageDevices} canViewOnprem={canViewOnprem} navigate={navigate} />
           {canViewOnprem && (
             <UpcomingPatchesCard patches={data.upcomingPatches} loading={loading.patches} error={errors.patches} navigate={navigate} />
           )}
@@ -415,17 +411,17 @@ function RecentActivityFeed({
 // Helper component: QuickActionsCard
 function QuickActionsCard({
   isAdmin,
-  canViewDevices,
+  canManageDevices,
   canViewOnprem,
   navigate,
 }: {
   isAdmin: boolean;
-  canViewDevices: boolean;
+  canManageDevices: boolean;
   canViewOnprem: boolean;
   navigate: any;
 }) {
   const actions = [
-    ...(canViewDevices ? [{ label: 'Register Device', icon: Plus, action: () => navigate('/devices/register') }] : []),
+    ...(canManageDevices ? [{ label: 'Register Device', icon: Plus, action: () => navigate('/devices/register') }] : []),
     ...(canViewOnprem ? [{ label: 'View On-Prem', icon: Briefcase, action: () => navigate('/onprem/clients') }] : []),
     ...(isAdmin ? [{ label: 'Manage Users', icon: UserPlus, action: () => navigate('/settings/users') }] : []),
     ...(canViewOnprem ? [{ label: 'License Requests', icon: FileText, action: () => navigate('/onprem/licence-requests') }] : []),
