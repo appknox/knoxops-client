@@ -71,7 +71,7 @@ export const useDeviceStore = create<DeviceState>((set, get) => ({
     totalPages: 0,
   },
   filters: initialFilters,
-  sortBy: 'createdAt',
+  sortBy: 'name',
   sortOrder: 'desc',
   isLoading: false,
   error: null,
