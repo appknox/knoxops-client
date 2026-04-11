@@ -1,51 +1,15 @@
-import { useState } from 'react';
-import { useNavigate, Navigate, Link, useSearchParams } from 'react-router-dom';
-import { useForm } from 'react-hook-form';
-import { zodResolver } from '@hookform/resolvers/zod';
-import { z } from 'zod';
-import { Mail, Lock, Eye, EyeOff } from 'lucide-react';
-import { Button, Input, Card, CardBody } from '@/components/ui';
+import { Navigate, useSearchParams } from 'react-router-dom';
+import { Card, CardBody } from '@/components/ui';
 import { useAuthStore } from '@/stores';
 
-const loginSchema = z.object({
-  email: z.string().email('Invalid email address'),
-  password: z.string().min(1, 'Password is required'),
-  rememberMe: z.boolean().optional(),
-});
-
-type LoginFormData = z.infer<typeof loginSchema>;
-
 const LoginPage = () => {
-  const navigate = useNavigate();
-  const { login, isAuthenticated, isLoading, error, clearError } = useAuthStore();
-  const [showPassword, setShowPassword] = useState(false);
+  const { isAuthenticated } = useAuthStore();
   const [searchParams] = useSearchParams();
   const oidcError = searchParams.get('error');
-
-  const {
-    register,
-    handleSubmit,
-    formState: { errors },
-  } = useForm<LoginFormData>({
-    resolver: zodResolver(loginSchema),
-    defaultValues: {
-      rememberMe: false,
-    },
-  });
 
   if (isAuthenticated) {
     return <Navigate to="/devices" replace />;
   }
-
-  const onSubmit = async (data: LoginFormData) => {
-    clearError();
-    try {
-      await login(data.email, data.password, data.rememberMe);
-      navigate('/devices');
-    } catch {
-      // Error handled in store
-    }
-  };
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col justify-center py-12 sm:px-6 lg:px-8">
@@ -64,21 +28,14 @@ const LoginPage = () => {
       <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-md">
         <Card>
           <CardBody>
-            {error && (
-              <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
-                {error}
-              </div>
-            )}
-
             {oidcError && (
               <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
                 {oidcError === 'oidc_unauthorized'
                   ? 'No account found for this Google address. Contact your administrator.'
-                  : 'Google sign-in failed. Please try again or use email/password.'}
+                  : 'Google sign-in failed. Please try again.'}
               </div>
             )}
 
-            {/* Google OIDC SSO Login Button */}
             <a
               href={`${import.meta.env.VITE_API_URL || '/api'}/auth/oidc`}
               className="flex items-center justify-center gap-3 w-full px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 transition-colors"
@@ -103,71 +60,6 @@ const LoginPage = () => {
               </svg>
               Sign in with Google
             </a>
-
-            <div className="relative my-4">
-              <div className="absolute inset-0 flex items-center">
-                <div className="w-full border-t border-gray-200" />
-              </div>
-              <div className="relative flex justify-center text-sm">
-                <span className="px-4 bg-white text-gray-500">or sign in with email</span>
-              </div>
-            </div>
-
-            <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
-              <Input
-                label="Email address"
-                type="email"
-                {...register('email')}
-                error={errors.email?.message}
-                leftIcon={<Mail className="h-4 w-4" />}
-                placeholder="you@company.com"
-              />
-
-              <div>
-                <Input
-                  label="Password"
-                  type={showPassword ? 'text' : 'password'}
-                  {...register('password')}
-                  error={errors.password?.message}
-                  leftIcon={<Lock className="h-4 w-4" />}
-                  rightIcon={
-                    <button
-                      type="button"
-                      onClick={() => setShowPassword(!showPassword)}
-                      className="focus:outline-none"
-                    >
-                      {showPassword ? (
-                        <EyeOff className="h-4 w-4" />
-                      ) : (
-                        <Eye className="h-4 w-4" />
-                      )}
-                    </button>
-                  }
-                  placeholder="Enter your password"
-                />
-              </div>
-
-              <div className="flex items-center justify-between">
-                <label className="flex items-center gap-2">
-                  <input
-                    type="checkbox"
-                    {...register('rememberMe')}
-                    className="h-4 w-4 text-primary-600 rounded border-gray-300 focus:ring-primary-500"
-                  />
-                  <span className="text-sm text-gray-600">Remember me</span>
-                </label>
-                <Link
-                  to="/forgot-password"
-                  className="text-sm font-medium text-primary-600 hover:text-primary-500"
-                >
-                  Forgot password?
-                </Link>
-              </div>
-
-              <Button type="submit" className="w-full" isLoading={isLoading}>
-                Sign in
-              </Button>
-            </form>
           </CardBody>
         </Card>
 
